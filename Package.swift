@@ -15,6 +15,7 @@ let package = Package(
     name: "CodexBar",
     platforms: [
         .macOS(.v14),
+        .iOS(.v17),
     ],
     products: [
         .library(name: "CodexBarCore", targets: ["CodexBarCore"]),

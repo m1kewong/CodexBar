@@ -41,6 +41,8 @@ struct UsageDashboardView: View {
     {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                self.copilotAuthCard
+
                 let available = snapshot.availableProviderIDs
                 if available.count > 1 {
                     Picker("Provider", selection: Binding(
@@ -89,19 +91,106 @@ struct UsageDashboardView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Text("No usage snapshot yet")
-                .font(.headline)
-            Text("Import `widget-snapshot.json` or load sample data to preview iOS cards and widgets.")
-                .font(.subheadline)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Button("Load Sample Data") {
-                self.viewModel.loadSampleData()
+        ScrollView {
+            VStack(spacing: 12) {
+                self.copilotAuthCard
+
+                Text("No usage snapshot yet")
+                    .font(.headline)
+                Text("Use GitHub sign-in + live refresh, import `widget-snapshot.json`, or load sample data.")
+                    .font(.subheadline)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                Button("Load Sample Data") {
+                    self.viewModel.loadSampleData()
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
+            .padding(24)
         }
-        .padding(24)
+    }
+
+    private var copilotAuthCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("GitHub Copilot (Live)")
+                .font(.headline)
+
+            if self.viewModel.hasCopilotToken {
+                Text("Signed in. You can refresh live usage anytime.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Refresh Live Usage") {
+                        Task { await self.viewModel.refreshCopilotUsage() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(self.viewModel.isRefreshingCopilotUsage || self.viewModel.isAuthenticatingCopilot)
+
+                    Button("Sign Out") {
+                        self.viewModel.clearCopilotToken()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                Text("Sign in with GitHub Device Flow to fetch real Copilot usage.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button("Start GitHub Sign-In") {
+                    Task { await self.viewModel.startCopilotDeviceLogin() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(self.viewModel.isAuthenticatingCopilot)
+            }
+
+            if let code = self.viewModel.copilotDeviceCode {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Verification Code")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(code.userCode)
+                        .font(.title3.weight(.bold))
+                        .textSelection(.enabled)
+                    Text(code.verificationURI)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    HStack {
+                        Button("Open Verification URL") {
+                            self.viewModel.openCopilotVerificationURL()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Complete Sign-In") {
+                            Task { await self.viewModel.completeCopilotDeviceLogin() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(self.viewModel.isAuthenticatingCopilot)
+                    }
+                }
+                .padding(10)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            if let status = self.viewModel.authStatusMessage {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if let status = self.viewModel.liveRefreshStatusMessage {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if let error = self.viewModel.authErrorMessage {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(16)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private static func relativeDate(_ value: Date) -> String {

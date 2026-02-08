@@ -44,12 +44,15 @@ The expected JSON schema matches CodexBar's widget snapshot format (`provider`, 
 
 ## Current behavior
 
+- Real auth flow for GitHub Copilot:
+  - start Device Flow in-app
+  - authorize with GitHub in browser
+  - complete token exchange in-app
+  - fetch live Copilot usage and persist widget snapshot
 - If no snapshot exists, app can load sample data.
-- You can paste/import snapshot JSON directly in the app.
+- You can still paste/import snapshot JSON directly in the app.
 - Widget renders the selected provider from snapshot data.
 
-## Next steps for deeper parity
+## Known gap
 
-- Add direct provider fetch flows on iOS (OAuth/API-token providers first).
-- Add secure iOS settings UI for provider credentials.
-- Add background refresh tasks that periodically persist fresh snapshots.
+- Codex/Claude/Gemini native iOS auth flows are not implemented yet in this scaffold.
