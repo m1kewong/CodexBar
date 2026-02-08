@@ -7,11 +7,18 @@ enum ProviderChoice: String, AppEnum {
     case codex
     case claude
     case gemini
+    case antigravity
     case cursor
+    case factory
     case copilot
     case minimax
+    case vertexai
+    case kiro
+    case augment
+    case jetbrains
     case kimi
     case kimik2
+    case amp
     case synthetic
     case opencode
     case zai
@@ -22,11 +29,18 @@ enum ProviderChoice: String, AppEnum {
         .codex: .init(title: "Codex"),
         .claude: .init(title: "Claude"),
         .gemini: .init(title: "Gemini"),
+        .antigravity: .init(title: "Antigravity"),
         .cursor: .init(title: "Cursor"),
+        .factory: .init(title: "Droid"),
         .copilot: .init(title: "Copilot"),
         .minimax: .init(title: "MiniMax"),
+        .vertexai: .init(title: "Vertex AI"),
+        .kiro: .init(title: "Kiro"),
+        .augment: .init(title: "Augment"),
+        .jetbrains: .init(title: "JetBrains"),
         .kimi: .init(title: "Kimi"),
         .kimik2: .init(title: "Kimi K2"),
+        .amp: .init(title: "Amp"),
         .synthetic: .init(title: "Synthetic"),
         .opencode: .init(title: "OpenCode"),
         .zai: .init(title: "z.ai"),

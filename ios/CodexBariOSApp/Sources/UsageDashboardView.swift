@@ -283,8 +283,13 @@ struct UsageDashboardView: View {
     }
 
     private var additionalProviderCards: some View {
-        ForEach(Self.tokenProviderConfigs) { config in
-            self.tokenProviderCard(config)
+        Group {
+            ForEach(Self.tokenProviderConfigs) { config in
+                self.tokenProviderCard(config)
+            }
+            ForEach(Self.unsupportedProviderConfigs) { config in
+                self.unsupportedProviderCard(config)
+            }
         }
     }
 
@@ -345,6 +350,18 @@ struct UsageDashboardView: View {
         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
     }
 
+    private func unsupportedProviderCard(_ config: UnsupportedProviderCardConfig) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(config.title)
+                .font(.headline)
+            Text(config.subtitle)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+    }
+
     private static func relativeDate(_ value: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
@@ -386,6 +403,46 @@ struct UsageDashboardView: View {
 
     private static let tokenProviderConfigs: [TokenProviderCardConfig] = [
         .init(
+            id: "claude",
+            title: "Claude (session key)",
+            subtitle: "Paste `sessionKey=...` cookie header or raw `sk-ant-...` session key.",
+            placeholder: "Claude sessionKey cookie"),
+        .init(
+            id: "cursor",
+            title: "Cursor (cookie header)",
+            subtitle: "Paste Cursor browser cookie header (`WorkosCursorSessionToken`/`next-auth`).",
+            placeholder: "Cursor Cookie header"),
+        .init(
+            id: "opencode",
+            title: "OpenCode (cookie header)",
+            subtitle: "Paste cookie header. Optional workspace override: `cookie||wrk_...`.",
+            placeholder: "OpenCode Cookie header"),
+        .init(
+            id: "augment",
+            title: "Augment (cookie header)",
+            subtitle: "Paste app.augmentcode.com cookie header to fetch credits/subscription.",
+            placeholder: "Augment Cookie header"),
+        .init(
+            id: "factory",
+            title: "Factory (cookie header)",
+            subtitle: "Paste app.factory.ai cookie header (supports `access-token` cookie if present).",
+            placeholder: "Factory Cookie header"),
+        .init(
+            id: "amp",
+            title: "Amp (cookie header)",
+            subtitle: "Paste ampcode.com cookie header to fetch free tier usage from settings page.",
+            placeholder: "Amp Cookie header"),
+        .init(
+            id: "gemini",
+            title: "Gemini (access token)",
+            subtitle: "Paste Google OAuth access token used by Gemini CLI.",
+            placeholder: "Gemini OAuth access token"),
+        .init(
+            id: "vertexai",
+            title: "Vertex AI (project + token)",
+            subtitle: "Format: `project_id||access_token`.",
+            placeholder: "my-project||ya29...."),
+        .init(
             id: "zai",
             title: "z.ai (API key)",
             subtitle: "Paste your z.ai API token to fetch quota usage directly.",
@@ -411,6 +468,21 @@ struct UsageDashboardView: View {
             subtitle: "Paste your Kimi auth token (JWT) to fetch coding quota usage.",
             placeholder: "Kimi auth token"),
     ]
+
+    private static let unsupportedProviderConfigs: [UnsupportedProviderCardConfig] = [
+        .init(
+            id: "antigravity",
+            title: "Antigravity",
+            subtitle: "Depends on local desktop language-server process; use JSON import from desktop CodexBar."),
+        .init(
+            id: "jetbrains",
+            title: "JetBrains",
+            subtitle: "Depends on local IDE XML quota files; use JSON import from desktop CodexBar."),
+        .init(
+            id: "kiro",
+            title: "Kiro",
+            subtitle: "Depends on local `kiro-cli` session; use JSON import from desktop CodexBar."),
+    ]
 }
 
 private struct TokenProviderCardConfig: Identifiable {
@@ -418,6 +490,12 @@ private struct TokenProviderCardConfig: Identifiable {
     let title: String
     let subtitle: String
     let placeholder: String
+}
+
+private struct UnsupportedProviderCardConfig: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
 }
 
 private struct UsageBarRow: View {

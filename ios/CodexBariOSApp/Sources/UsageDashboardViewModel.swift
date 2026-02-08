@@ -35,7 +35,21 @@ final class UsageDashboardViewModel {
     var providerHasToken: [String: Bool] = [:]
     var providerRefreshingIDs: Set<String> = []
 
-    private static let apiTokenProviderIDs = ["zai", "minimax", "synthetic", "kimik2", "kimi"]
+    private static let apiTokenProviderIDs = [
+        "claude",
+        "cursor",
+        "opencode",
+        "augment",
+        "factory",
+        "amp",
+        "gemini",
+        "vertexai",
+        "zai",
+        "minimax",
+        "synthetic",
+        "kimik2",
+        "kimi",
+    ]
 
     var selectedSummary: iOSWidgetSnapshot.ProviderSummary? {
         guard let snapshot else { return nil }
@@ -378,6 +392,31 @@ final class UsageDashboardViewModel {
 
     private func fetchProviderSnapshot(_ providerID: String, token: String) async throws -> iOSWidgetSnapshot {
         switch providerID {
+        case "claude":
+            let usage = try await iOSClaudeWebUsageFetcher.fetchUsage(sessionCredential: token)
+            return iOSClaudeWebUsageMapper.makeSnapshot(from: usage)
+        case "cursor":
+            let usage = try await iOSCursorUsageFetcher.fetchUsage(cookieHeader: token)
+            return iOSCursorUsageMapper.makeSnapshot(from: usage)
+        case "opencode":
+            let usage = try await iOSOpenCodeUsageFetcher.fetchUsage(cookieCredential: token)
+            return iOSOpenCodeUsageMapper.makeSnapshot(from: usage)
+        case "augment":
+            let usage = try await iOSAugmentUsageFetcher.fetchUsage(cookieHeader: token)
+            return iOSAugmentUsageMapper.makeSnapshot(from: usage)
+        case "factory":
+            let usage = try await iOSFactoryUsageFetcher.fetchUsage(cookieHeader: token)
+            return iOSFactoryUsageMapper.makeSnapshot(from: usage)
+        case "amp":
+            let usage = try await iOSAmpUsageFetcher.fetchUsage(cookieHeader: token)
+            return iOSAmpUsageMapper.makeSnapshot(from: usage)
+        case "gemini":
+            let usage = try await iOSGeminiUsageFetcher.fetchUsage(accessToken: token)
+            return iOSGeminiUsageMapper.makeSnapshot(from: usage)
+        case "vertexai":
+            let (projectID, accessToken) = try self.parseVertexAICredential(token)
+            let usage = try await iOSVertexAIUsageFetcher.fetchUsage(projectID: projectID, accessToken: accessToken)
+            return iOSVertexAIUsageMapper.makeSnapshot(from: usage)
         case "zai":
             let usage = try await iOSZaiUsageFetcher.fetchUsage(apiKey: token)
             return iOSZaiUsageMapper.makeSnapshot(from: usage)
@@ -396,6 +435,21 @@ final class UsageDashboardViewModel {
         default:
             throw UnsupportedProviderError(providerID: providerID)
         }
+    }
+
+    private func parseVertexAICredential(_ raw: String) throws -> (projectID: String, accessToken: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let separators = ["||", "|", "\n"]
+        for separator in separators {
+            if let range = trimmed.range(of: separator) {
+                let projectID = String(trimmed[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let accessToken = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !projectID.isEmpty, !accessToken.isEmpty {
+                    return (projectID, accessToken)
+                }
+            }
+        }
+        throw InvalidCredentialFormatError(providerID: "vertexai", expectedFormat: "project_id||access_token")
     }
 
     private func refreshProviderTokenPresence() {
@@ -432,5 +486,14 @@ private struct UnsupportedProviderError: LocalizedError {
 
     var errorDescription: String? {
         "Unsupported provider: \(self.providerID)"
+    }
+}
+
+private struct InvalidCredentialFormatError: LocalizedError {
+    let providerID: String
+    let expectedFormat: String
+
+    var errorDescription: String? {
+        "Invalid \(providerID) credential format. Use \(expectedFormat)."
     }
 }

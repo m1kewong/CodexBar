@@ -56,6 +56,14 @@ The expected JSON schema matches CodexBar's widget snapshot format (`provider`, 
   - refresh OAuth tokens as needed
   - fetch live Codex usage (`plus`, `pro`, etc.) and persist widget snapshot
 - Additional live provider refresh via saved API credentials in iOS Keychain:
+  - Claude (session key / cookie header)
+  - Cursor (cookie header)
+  - OpenCode (cookie header, optional workspace override)
+  - Augment (cookie header)
+  - Factory (cookie header)
+  - Amp (cookie header)
+  - Gemini (OAuth access token)
+  - Vertex AI (`project_id||access_token`)
   - z.ai (`Z_AI_API_KEY` equivalent)
   - MiniMax API token
   - Synthetic API key
@@ -67,4 +75,7 @@ The expected JSON schema matches CodexBar's widget snapshot format (`provider`, 
 
 ## Known gap
 
-- Browser-cookie/native iOS auth flows for providers like Claude/Gemini/Cursor/OpenCode are not implemented yet in this scaffold.
+- Desktop-local providers that still depend on local process/files are not live on iOS:
+  - Antigravity (local language server)
+  - JetBrains (local IDE quota XML)
+  - Kiro (local CLI session)

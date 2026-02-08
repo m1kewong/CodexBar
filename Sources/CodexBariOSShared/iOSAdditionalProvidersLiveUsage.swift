@@ -1364,3 +1364,1584 @@ public enum iOSMiniMaxUsageMapper {
         return "\(minutes) \(minutes == 1 ? "minute" : "minutes")"
     }
 }
+
+// MARK: - Shared credential parsing
+
+private enum iOSProviderCredentialParsing {
+    static func cookieValue(named name: String, in credential: String) -> String? {
+        for pair in cookiePairs(from: credential) where pair.name.caseInsensitiveCompare(name) == .orderedSame {
+            let value = pair.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    static func cookiePairs(from credential: String) -> [(name: String, value: String)] {
+        credential.split(separator: ";").compactMap { chunk in
+            let parts = chunk.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard let rawName = parts.first else { return nil }
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            let value = parts.count > 1 ? String(parts[1]) : ""
+            return (name, value)
+        }
+    }
+
+    static func splitCredentialAndContext(_ raw: String, separator: String = "||") -> (credential: String, context: String?) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = trimmed.range(of: separator) else {
+            return (trimmed, nil)
+        }
+        let credential = String(trimmed[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let context = String(trimmed[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (credential, context.isEmpty ? nil : context)
+    }
+}
+
+private enum iOSISO8601 {
+    static func parse(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractional.date(from: value) {
+            return date
+        }
+        let normal = ISO8601DateFormatter()
+        normal.formatOptions = [.withInternetDateTime]
+        return normal.date(from: value)
+    }
+}
+
+// MARK: - Claude Web (session cookie)
+
+public struct iOSClaudeWebUsageSnapshot: Sendable {
+    public let sessionPercentUsed: Double
+    public let sessionResetsAt: Date?
+    public let weeklyPercentUsed: Double?
+    public let weeklyResetsAt: Date?
+    public let opusPercentUsed: Double?
+    public let planName: String?
+    public let updatedAt: Date
+}
+
+public enum iOSClaudeWebUsageError: LocalizedError, Sendable {
+    case missingSessionKey
+    case unauthorized
+    case invalidResponse
+    case apiError(String)
+    case networkError(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingSessionKey:
+            "Missing Claude session key. Paste `sessionKey=...` cookie or `sk-ant-...` key."
+        case .unauthorized:
+            "Claude session is unauthorized or expired."
+        case .invalidResponse:
+            "Invalid Claude usage response."
+        case let .apiError(message):
+            "Claude API error: \(message)"
+        case let .networkError(message):
+            "Claude network error: \(message)"
+        }
+    }
+}
+
+private struct iOSClaudeOrganizationResponse: Decodable {
+    let uuid: String
+    let capabilities: [String]?
+
+    var hasChatCapability: Bool {
+        Set((self.capabilities ?? []).map { $0.lowercased() }).contains("chat")
+    }
+}
+
+private struct iOSClaudeAccountResponse: Decodable {
+    let memberships: [Membership]?
+
+    struct Membership: Decodable {
+        let organization: Organization
+
+        struct Organization: Decodable {
+            let uuid: String?
+            let rateLimitTier: String?
+            let billingType: String?
+
+            enum CodingKeys: String, CodingKey {
+                case uuid
+                case rateLimitTier = "rate_limit_tier"
+                case billingType = "billing_type"
+            }
+        }
+    }
+}
+
+public enum iOSClaudeWebUsageFetcher {
+    private static let apiBaseURL = URL(string: "https://claude.ai/api")!
+
+    public static func fetchUsage(sessionCredential: String) async throws -> iOSClaudeWebUsageSnapshot {
+        let sessionKey = try self.parseSessionKey(from: sessionCredential)
+        let organizationID = try await self.fetchOrganizationID(sessionKey: sessionKey)
+        let usageData = try await self.fetchUsagePayload(sessionKey: sessionKey, organizationID: organizationID)
+        let plan = await self.fetchPlanName(sessionKey: sessionKey, organizationID: organizationID)
+        return try self.parseUsageSnapshot(data: usageData, planName: plan, now: Date())
+    }
+
+    public static func _parseUsageSnapshotForTesting(_ data: Data, planName: String? = nil, now: Date = Date()) throws
+        -> iOSClaudeWebUsageSnapshot
+    {
+        try self.parseUsageSnapshot(data: data, planName: planName, now: now)
+    }
+
+    private static func parseSessionKey(from raw: String) throws -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("sk-ant-") {
+            return trimmed
+        }
+        if let cookie = iOSProviderCredentialParsing.cookieValue(named: "sessionKey", in: trimmed),
+           cookie.hasPrefix("sk-ant-")
+        {
+            return cookie
+        }
+        throw iOSClaudeWebUsageError.missingSessionKey
+    }
+
+    private static func fetchOrganizationID(sessionKey: String) async throws -> String {
+        let url = self.apiBaseURL.appendingPathComponent("organizations")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSClaudeWebUsageError.invalidResponse
+        }
+        switch http.statusCode {
+        case 200:
+            let organizations = try JSONDecoder().decode([iOSClaudeOrganizationResponse].self, from: data)
+            if let preferred = organizations.first(where: { $0.hasChatCapability }) ?? organizations.first {
+                return preferred.uuid
+            }
+            throw iOSClaudeWebUsageError.invalidResponse
+        case 401, 403:
+            throw iOSClaudeWebUsageError.unauthorized
+        default:
+            throw iOSClaudeWebUsageError.apiError("HTTP \(http.statusCode)")
+        }
+    }
+
+    private static func fetchUsagePayload(sessionKey: String, organizationID: String) async throws -> Data {
+        let url = self.apiBaseURL.appendingPathComponent("organizations/\(organizationID)/usage")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSClaudeWebUsageError.invalidResponse
+        }
+        switch http.statusCode {
+        case 200:
+            return data
+        case 401, 403:
+            throw iOSClaudeWebUsageError.unauthorized
+        default:
+            throw iOSClaudeWebUsageError.apiError("HTTP \(http.statusCode)")
+        }
+    }
+
+    private static func fetchPlanName(sessionKey: String, organizationID: String) async -> String? {
+        let url = self.apiBaseURL.appendingPathComponent("account")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                return nil
+            }
+            let account = try JSONDecoder().decode(iOSClaudeAccountResponse.self, from: data)
+            let membership = account.memberships?.first(where: { $0.organization.uuid == organizationID })
+                ?? account.memberships?.first
+            return self.inferPlanName(
+                rateLimitTier: membership?.organization.rateLimitTier,
+                billingType: membership?.organization.billingType)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func inferPlanName(rateLimitTier: String?, billingType: String?) -> String? {
+        let tier = rateLimitTier?.lowercased() ?? ""
+        let billing = billingType?.lowercased() ?? ""
+        if tier.contains("max") { return "Claude Max" }
+        if tier.contains("pro") { return "Claude Pro" }
+        if tier.contains("team") { return "Claude Team" }
+        if tier.contains("enterprise") { return "Claude Enterprise" }
+        if billing.contains("stripe"), tier.contains("claude") { return "Claude Pro" }
+        return nil
+    }
+
+    private static func parseUsageSnapshot(data: Data, planName: String?, now: Date) throws -> iOSClaudeWebUsageSnapshot {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw iOSClaudeWebUsageError.invalidResponse
+        }
+
+        guard let fiveHour = json["five_hour"] as? [String: Any],
+              let sessionPercent = (fiveHour["utilization"] as? NSNumber)?.doubleValue,
+              let sessionResetRaw = fiveHour["resets_at"] as? String
+        else {
+            throw iOSClaudeWebUsageError.invalidResponse
+        }
+
+        let weekly = json["seven_day"] as? [String: Any]
+        let weeklyPercent = (weekly?["utilization"] as? NSNumber)?.doubleValue
+        let weeklyResetRaw = weekly?["resets_at"] as? String
+
+        let opus = json["seven_day_opus"] as? [String: Any]
+        let opusPercent = (opus?["utilization"] as? NSNumber)?.doubleValue
+
+        return iOSClaudeWebUsageSnapshot(
+            sessionPercentUsed: sessionPercent,
+            sessionResetsAt: iOSISO8601.parse(sessionResetRaw),
+            weeklyPercentUsed: weeklyPercent,
+            weeklyResetsAt: iOSISO8601.parse(weeklyResetRaw),
+            opusPercentUsed: opusPercent,
+            planName: planName,
+            updatedAt: now)
+    }
+}
+
+public enum iOSClaudeWebUsageMapper {
+    public static func makeSnapshot(from usage: iOSClaudeWebUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "claude",
+            updatedAt: generatedAt,
+            primary: .init(
+                usedPercent: max(0, min(100, usage.sessionPercentUsed)),
+                windowMinutes: 5 * 60,
+                resetsAt: usage.sessionResetsAt,
+                resetDescription: "5h window"),
+            secondary: usage.weeklyPercentUsed.map {
+                .init(
+                    usedPercent: max(0, min(100, $0)),
+                    windowMinutes: 7 * 24 * 60,
+                    resetsAt: usage.weeklyResetsAt,
+                    resetDescription: "7d window")
+            },
+            tertiary: usage.opusPercentUsed.map {
+                .init(
+                    usedPercent: max(0, min(100, $0)),
+                    windowMinutes: 7 * 24 * 60,
+                    resetsAt: usage.weeklyResetsAt,
+                    resetDescription: "7d Opus")
+            },
+            planType: usage.planName,
+            creditsRemaining: nil,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["claude"], generatedAt: generatedAt)
+    }
+}
+
+// MARK: - Cursor (cookie header)
+
+public struct iOSCursorUsageSnapshot: Sendable {
+    public let planPercentUsed: Double
+    public let onDemandUsedUSD: Double
+    public let onDemandLimitUSD: Double?
+    public let billingCycleEnd: Date?
+    public let membershipType: String?
+    public let updatedAt: Date
+}
+
+public enum iOSCursorUsageError: LocalizedError, Sendable {
+    case invalidCredentials
+    case networkError(String)
+    case parseFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            "Cursor session cookie is invalid or expired."
+        case let .networkError(message):
+            "Cursor network error: \(message)"
+        case let .parseFailed(message):
+            "Cursor parse error: \(message)"
+        }
+    }
+}
+
+private struct iOSCursorUsageSummaryResponse: Decodable {
+    let billingCycleEnd: String?
+    let membershipType: String?
+    let individualUsage: IndividualUsage?
+
+    struct IndividualUsage: Decodable {
+        let plan: PlanUsage?
+        let onDemand: OnDemandUsage?
+    }
+
+    struct PlanUsage: Decodable {
+        let used: Int?
+        let limit: Int?
+        let totalPercentUsed: Double?
+    }
+
+    struct OnDemandUsage: Decodable {
+        let used: Int?
+        let limit: Int?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case billingCycleEnd
+        case membershipType
+        case individualUsage
+    }
+}
+
+public enum iOSCursorUsageFetcher {
+    private static let baseURL = URL(string: "https://cursor.com")!
+
+    public static func fetchUsage(cookieHeader: String) async throws -> iOSCursorUsageSnapshot {
+        let normalizedCookie = cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedCookie.isEmpty else {
+            throw iOSCursorUsageError.invalidCredentials
+        }
+
+        var request = URLRequest(url: Self.baseURL.appendingPathComponent("api/usage-summary"))
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(normalizedCookie, forHTTPHeaderField: "Cookie")
+        request.timeoutInterval = 15
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSCursorUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSCursorUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            throw iOSCursorUsageError.networkError("HTTP \(http.statusCode)")
+        }
+        return try self.parseUsageSnapshot(data: data, now: Date())
+    }
+
+    public static func _parseUsageSnapshotForTesting(_ data: Data, now: Date = Date()) throws -> iOSCursorUsageSnapshot {
+        try self.parseUsageSnapshot(data: data, now: now)
+    }
+
+    private static func parseUsageSnapshot(data: Data, now: Date) throws -> iOSCursorUsageSnapshot {
+        let summary = try JSONDecoder().decode(iOSCursorUsageSummaryResponse.self, from: data)
+
+        let planUsedRaw = Double(summary.individualUsage?.plan?.used ?? 0)
+        let planLimitRaw = Double(summary.individualUsage?.plan?.limit ?? 0)
+        let planPercentUsed: Double = if planLimitRaw > 0 {
+            (planUsedRaw / planLimitRaw) * 100
+        } else if let totalPercentUsed = summary.individualUsage?.plan?.totalPercentUsed {
+            totalPercentUsed <= 1 ? totalPercentUsed * 100 : totalPercentUsed
+        } else {
+            0
+        }
+
+        let onDemandUsedUSD = Double(summary.individualUsage?.onDemand?.used ?? 0) / 100.0
+        let onDemandLimitUSD = summary.individualUsage?.onDemand?.limit.map { Double($0) / 100.0 }
+        let billingEnd = iOSISO8601.parse(summary.billingCycleEnd)
+
+        return iOSCursorUsageSnapshot(
+            planPercentUsed: max(0, min(100, planPercentUsed)),
+            onDemandUsedUSD: onDemandUsedUSD,
+            onDemandLimitUSD: onDemandLimitUSD,
+            billingCycleEnd: billingEnd,
+            membershipType: summary.membershipType,
+            updatedAt: now)
+    }
+}
+
+public enum iOSCursorUsageMapper {
+    public static func makeSnapshot(from usage: iOSCursorUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let secondary: iOSWidgetSnapshot.RateWindow? = {
+            guard let limit = usage.onDemandLimitUSD, limit > 0 else { return nil }
+            let percent = max(0, min(100, (usage.onDemandUsedUSD / limit) * 100))
+            return .init(
+                usedPercent: percent,
+                windowMinutes: nil,
+                resetsAt: usage.billingCycleEnd,
+                resetDescription: "On-demand")
+        }()
+
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "cursor",
+            updatedAt: generatedAt,
+            primary: .init(
+                usedPercent: usage.planPercentUsed,
+                windowMinutes: nil,
+                resetsAt: usage.billingCycleEnd,
+                resetDescription: "Plan usage"),
+            secondary: secondary,
+            tertiary: nil,
+            planType: usage.membershipType,
+            creditsRemaining: nil,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["cursor"], generatedAt: generatedAt)
+    }
+}
+
+// MARK: - OpenCode (cookie header)
+
+public struct iOSOpenCodeUsageSnapshot: Sendable {
+    public let rollingUsagePercent: Double
+    public let weeklyUsagePercent: Double
+    public let rollingResetInSec: Int
+    public let weeklyResetInSec: Int
+    public let updatedAt: Date
+}
+
+public enum iOSOpenCodeUsageError: LocalizedError, Sendable {
+    case invalidCredentials
+    case networkError(String)
+    case parseFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            "OpenCode session cookie is invalid or expired."
+        case let .networkError(message):
+            "OpenCode network error: \(message)"
+        case let .parseFailed(message):
+            "OpenCode parse error: \(message)"
+        }
+    }
+}
+
+public enum iOSOpenCodeUsageFetcher {
+    private static let baseURL = URL(string: "https://opencode.ai")!
+    private static let serverURL = URL(string: "https://opencode.ai/_server")!
+    private static let workspacesServerID = "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f"
+    private static let subscriptionServerID = "7abeebee372f304e050aaaf92be863f4a86490e382f8c79db68fd94040d691b4"
+
+    public static func fetchUsage(cookieCredential: String) async throws -> iOSOpenCodeUsageSnapshot {
+        let parsed = iOSProviderCredentialParsing.splitCredentialAndContext(cookieCredential)
+        let cookieHeader = parsed.credential
+        guard !cookieHeader.isEmpty else {
+            throw iOSOpenCodeUsageError.invalidCredentials
+        }
+        let workspaceID: String
+        if let explicit = parsed.context, !explicit.isEmpty {
+            workspaceID = explicit
+        } else {
+            workspaceID = try await self.fetchWorkspaceID(cookieHeader: cookieHeader)
+        }
+        let subscriptionText = try await self.fetchSubscriptionInfo(
+            workspaceID: workspaceID,
+            cookieHeader: cookieHeader)
+        return try self.parseSubscription(text: subscriptionText, now: Date())
+    }
+
+    public static func _parseSubscriptionForTesting(_ text: String, now: Date = Date()) throws -> iOSOpenCodeUsageSnapshot {
+        try self.parseSubscription(text: text, now: now)
+    }
+
+    private static func fetchWorkspaceID(cookieHeader: String) async throws -> String {
+        let text = try await self.fetchServerText(
+            serverID: self.workspacesServerID,
+            args: nil,
+            method: "GET",
+            referer: self.baseURL,
+            cookieHeader: cookieHeader)
+        if self.looksSignedOut(text) {
+            throw iOSOpenCodeUsageError.invalidCredentials
+        }
+        let ids = self.parseWorkspaceIDs(text: text)
+        if let first = ids.first {
+            return first
+        }
+        throw iOSOpenCodeUsageError.parseFailed("Missing workspace id")
+    }
+
+    private static func fetchSubscriptionInfo(
+        workspaceID: String,
+        cookieHeader: String) async throws -> String
+    {
+        let referer = URL(string: "https://opencode.ai/workspace/\(workspaceID)/billing") ?? self.baseURL
+        let text = try await self.fetchServerText(
+            serverID: self.subscriptionServerID,
+            args: [workspaceID],
+            method: "GET",
+            referer: referer,
+            cookieHeader: cookieHeader)
+        if self.looksSignedOut(text) {
+            throw iOSOpenCodeUsageError.invalidCredentials
+        }
+        return text
+    }
+
+    private static func fetchServerText(
+        serverID: String,
+        args: [Any]?,
+        method: String,
+        referer: URL,
+        cookieHeader: String) async throws -> String
+    {
+        let url = self.serverRequestURL(serverID: serverID, args: args, method: method)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 15
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        request.setValue(serverID, forHTTPHeaderField: "X-Server-Id")
+        request.setValue("server-fn:\(UUID().uuidString)", forHTTPHeaderField: "X-Server-Instance")
+        request.setValue(self.baseURL.absoluteString, forHTTPHeaderField: "Origin")
+        request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
+        request.setValue("text/javascript, application/json;q=0.9, */*;q=0.8", forHTTPHeaderField: "Accept")
+
+        if method.uppercased() != "GET",
+           let args,
+           let body = try? JSONSerialization.data(withJSONObject: args, options: [])
+        {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSOpenCodeUsageError.networkError("Invalid response")
+        }
+
+        guard http.statusCode == 200 else {
+            if http.statusCode == 401 || http.statusCode == 403 {
+                throw iOSOpenCodeUsageError.invalidCredentials
+            }
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw iOSOpenCodeUsageError.networkError("HTTP \(http.statusCode): \(body.prefix(120))")
+        }
+
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw iOSOpenCodeUsageError.parseFailed("Response is not UTF-8")
+        }
+        return text
+    }
+
+    private static func serverRequestURL(serverID: String, args: [Any]?, method: String) -> URL {
+        guard method.uppercased() == "GET" else {
+            return self.serverURL
+        }
+        var components = URLComponents(url: self.serverURL, resolvingAgainstBaseURL: false)
+        var items = [URLQueryItem(name: "id", value: serverID)]
+        if let args, !args.isEmpty,
+           let data = try? JSONSerialization.data(withJSONObject: args, options: []),
+           let encoded = String(data: data, encoding: .utf8)
+        {
+            items.append(URLQueryItem(name: "args", value: encoded))
+        }
+        components?.queryItems = items
+        return components?.url ?? self.serverURL
+    }
+
+    private static func parseSubscription(text: String, now: Date) throws -> iOSOpenCodeUsageSnapshot {
+        guard let rollingPercent = self.extractDouble(
+            pattern: #"rollingUsage[^}]*?usagePercent\s*:\s*([0-9]+(?:\.[0-9]+)?)"#,
+            text: text),
+            let rollingReset = self.extractInt(
+                pattern: #"rollingUsage[^}]*?resetInSec\s*:\s*([0-9]+)"#,
+                text: text),
+            let weeklyPercent = self.extractDouble(
+                pattern: #"weeklyUsage[^}]*?usagePercent\s*:\s*([0-9]+(?:\.[0-9]+)?)"#,
+                text: text),
+            let weeklyReset = self.extractInt(
+                pattern: #"weeklyUsage[^}]*?resetInSec\s*:\s*([0-9]+)"#,
+                text: text)
+        else {
+            throw iOSOpenCodeUsageError.parseFailed("Missing usage fields")
+        }
+
+        return iOSOpenCodeUsageSnapshot(
+            rollingUsagePercent: rollingPercent,
+            weeklyUsagePercent: weeklyPercent,
+            rollingResetInSec: rollingReset,
+            weeklyResetInSec: weeklyReset,
+            updatedAt: now)
+    }
+
+    private static func parseWorkspaceIDs(text: String) -> [String] {
+        let pattern = #"id\s*:\s*\"(wrk_[^\"]+)\""#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, options: [], range: range).compactMap { match in
+            guard let matchRange = Range(match.range(at: 1), in: text) else { return nil }
+            return String(text[matchRange])
+        }
+    }
+
+    private static func extractDouble(pattern: String, text: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              let matchRange = Range(match.range(at: 1), in: text)
+        else {
+            return nil
+        }
+        return Double(text[matchRange])
+    }
+
+    private static func extractInt(pattern: String, text: String) -> Int? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              let matchRange = Range(match.range(at: 1), in: text)
+        else {
+            return nil
+        }
+        return Int(text[matchRange])
+    }
+
+    private static func looksSignedOut(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("login") || lower.contains("sign in") || lower.contains("auth/authorize")
+    }
+}
+
+public enum iOSOpenCodeUsageMapper {
+    public static func makeSnapshot(from usage: iOSOpenCodeUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let rollingReset = generatedAt.addingTimeInterval(TimeInterval(usage.rollingResetInSec))
+        let weeklyReset = generatedAt.addingTimeInterval(TimeInterval(usage.weeklyResetInSec))
+
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "opencode",
+            updatedAt: generatedAt,
+            primary: .init(
+                usedPercent: max(0, min(100, usage.rollingUsagePercent)),
+                windowMinutes: 5 * 60,
+                resetsAt: rollingReset,
+                resetDescription: "5h window"),
+            secondary: .init(
+                usedPercent: max(0, min(100, usage.weeklyUsagePercent)),
+                windowMinutes: 7 * 24 * 60,
+                resetsAt: weeklyReset,
+                resetDescription: "7d window"),
+            tertiary: nil,
+            planType: nil,
+            creditsRemaining: nil,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["opencode"], generatedAt: generatedAt)
+    }
+}
+
+// MARK: - Augment (cookie header)
+
+private struct iOSAugmentCreditsResponse: Codable {
+    let usageUnitsRemaining: Double?
+    let usageUnitsConsumedThisBillingCycle: Double?
+}
+
+private struct iOSAugmentSubscriptionResponse: Codable {
+    let planName: String?
+    let billingPeriodEnd: String?
+}
+
+public struct iOSAugmentUsageSnapshot: Sendable {
+    public let creditsRemaining: Double?
+    public let creditsUsed: Double?
+    public let creditsLimit: Double?
+    public let billingCycleEnd: Date?
+    public let planName: String?
+    public let updatedAt: Date
+}
+
+public enum iOSAugmentUsageError: LocalizedError, Sendable {
+    case invalidCredentials
+    case networkError(String)
+    case parseFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            "Augment session cookie is invalid or expired."
+        case let .networkError(message):
+            "Augment network error: \(message)"
+        case let .parseFailed(message):
+            "Augment parse error: \(message)"
+        }
+    }
+}
+
+public enum iOSAugmentUsageFetcher {
+    private static let baseURL = URL(string: "https://app.augmentcode.com")!
+
+    public static func fetchUsage(cookieHeader: String) async throws -> iOSAugmentUsageSnapshot {
+        let cookie = cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cookie.isEmpty else { throw iOSAugmentUsageError.invalidCredentials }
+
+        async let creditsTask: (iOSAugmentCreditsResponse, Data) = self.fetchCredits(cookieHeader: cookie)
+        async let subscriptionTask: (iOSAugmentSubscriptionResponse?, Data?) = self.fetchSubscription(cookieHeader: cookie)
+
+        let (credits, _) = try await creditsTask
+        let (subscription, _) = try await subscriptionTask
+
+        let remaining = credits.usageUnitsRemaining
+        let used = credits.usageUnitsConsumedThisBillingCycle
+        let limit: Double? = {
+            guard let remaining, let used else { return nil }
+            return remaining + used
+        }()
+
+        return iOSAugmentUsageSnapshot(
+            creditsRemaining: remaining,
+            creditsUsed: used,
+            creditsLimit: limit,
+            billingCycleEnd: iOSISO8601.parse(subscription?.billingPeriodEnd),
+            planName: subscription?.planName,
+            updatedAt: Date())
+    }
+
+    private static func fetchCredits(cookieHeader: String) async throws -> (iOSAugmentCreditsResponse, Data) {
+        var request = URLRequest(url: self.baseURL.appendingPathComponent("api/credits"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSAugmentUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSAugmentUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            throw iOSAugmentUsageError.networkError("HTTP \(http.statusCode)")
+        }
+
+        do {
+            return (try JSONDecoder().decode(iOSAugmentCreditsResponse.self, from: data), data)
+        } catch {
+            throw iOSAugmentUsageError.parseFailed(error.localizedDescription)
+        }
+    }
+
+    private static func fetchSubscription(cookieHeader: String) async throws -> (iOSAugmentSubscriptionResponse?, Data?) {
+        var request = URLRequest(url: self.baseURL.appendingPathComponent("api/subscription"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSAugmentUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSAugmentUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            return (nil, nil)
+        }
+        return (try? JSONDecoder().decode(iOSAugmentSubscriptionResponse.self, from: data), data)
+    }
+}
+
+public enum iOSAugmentUsageMapper {
+    public static func makeSnapshot(from usage: iOSAugmentUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let usedPercent: Double = {
+            guard let used = usage.creditsUsed, let limit = usage.creditsLimit, limit > 0 else { return 0 }
+            return max(0, min(100, (used / limit) * 100))
+        }()
+
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "augment",
+            updatedAt: generatedAt,
+            primary: .init(
+                usedPercent: usedPercent,
+                windowMinutes: nil,
+                resetsAt: usage.billingCycleEnd,
+                resetDescription: "Billing cycle"),
+            secondary: nil,
+            tertiary: nil,
+            planType: usage.planName,
+            creditsRemaining: usage.creditsRemaining,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["augment"], generatedAt: generatedAt)
+    }
+}
+
+// MARK: - Factory (cookie header)
+
+private struct iOSFactoryAuthResponse: Codable {
+    let organization: Organization?
+
+    struct Organization: Codable {
+        let name: String?
+        let subscription: Subscription?
+
+        struct Subscription: Codable {
+            let factoryTier: String?
+            let orbSubscription: OrbSubscription?
+
+            struct OrbSubscription: Codable {
+                let plan: Plan?
+
+                struct Plan: Codable {
+                    let name: String?
+                }
+            }
+        }
+    }
+}
+
+private struct iOSFactoryUsageResponse: Codable {
+    let usage: Usage?
+
+    struct Usage: Codable {
+        let startDate: Int64?
+        let endDate: Int64?
+        let standard: Bucket?
+        let premium: Bucket?
+
+        struct Bucket: Codable {
+            let userTokens: Int64?
+            let totalAllowance: Int64?
+            let usedRatio: Double?
+        }
+    }
+}
+
+public struct iOSFactoryUsageSnapshot: Sendable {
+    public let standardUsedPercent: Double
+    public let premiumUsedPercent: Double?
+    public let periodEnd: Date?
+    public let planName: String?
+    public let tier: String?
+    public let updatedAt: Date
+}
+
+public enum iOSFactoryUsageError: LocalizedError, Sendable {
+    case invalidCredentials
+    case networkError(String)
+    case parseFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            "Factory session cookie is invalid or expired."
+        case let .networkError(message):
+            "Factory network error: \(message)"
+        case let .parseFailed(message):
+            "Factory parse error: \(message)"
+        }
+    }
+}
+
+public enum iOSFactoryUsageFetcher {
+    private static let baseURL = URL(string: "https://app.factory.ai")!
+
+    public static func fetchUsage(cookieHeader: String) async throws -> iOSFactoryUsageSnapshot {
+        let cookie = cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cookie.isEmpty else {
+            throw iOSFactoryUsageError.invalidCredentials
+        }
+
+        let bearerToken = iOSProviderCredentialParsing.cookieValue(named: "access-token", in: cookie)
+
+        async let authTask = self.fetchAuth(cookieHeader: cookie, bearerToken: bearerToken)
+        async let usageTask = self.fetchUsageData(cookieHeader: cookie, bearerToken: bearerToken)
+
+        let auth = try await authTask
+        let usage = try await usageTask
+
+        let standardPercent = self.percentUsed(
+            used: usage.usage?.standard?.userTokens,
+            allowance: usage.usage?.standard?.totalAllowance,
+            ratio: usage.usage?.standard?.usedRatio)
+
+        let premiumAllowance = usage.usage?.premium?.totalAllowance ?? 0
+        let premiumPercentRaw = self.percentUsed(
+            used: usage.usage?.premium?.userTokens,
+            allowance: usage.usage?.premium?.totalAllowance,
+            ratio: usage.usage?.premium?.usedRatio)
+        let premiumPercent = premiumAllowance > 0 ? premiumPercentRaw : nil
+
+        let periodEnd = usage.usage?.endDate.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000) }
+
+        return iOSFactoryUsageSnapshot(
+            standardUsedPercent: standardPercent,
+            premiumUsedPercent: premiumPercent,
+            periodEnd: periodEnd,
+            planName: auth.organization?.subscription?.orbSubscription?.plan?.name,
+            tier: auth.organization?.subscription?.factoryTier,
+            updatedAt: Date())
+    }
+
+    private static func fetchAuth(cookieHeader: String, bearerToken: String?) async throws -> iOSFactoryAuthResponse {
+        var request = URLRequest(url: self.baseURL.appendingPathComponent("api/app/auth/me"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://app.factory.ai", forHTTPHeaderField: "Origin")
+        request.setValue("https://app.factory.ai/", forHTTPHeaderField: "Referer")
+        request.setValue("web-app", forHTTPHeaderField: "x-factory-client")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        if let bearerToken {
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSFactoryUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSFactoryUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            throw iOSFactoryUsageError.networkError("HTTP \(http.statusCode)")
+        }
+
+        do {
+            return try JSONDecoder().decode(iOSFactoryAuthResponse.self, from: data)
+        } catch {
+            throw iOSFactoryUsageError.parseFailed(error.localizedDescription)
+        }
+    }
+
+    private static func fetchUsageData(cookieHeader: String, bearerToken: String?) async throws -> iOSFactoryUsageResponse {
+        var request = URLRequest(url: self.baseURL.appendingPathComponent("api/organization/subscription/usage"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://app.factory.ai", forHTTPHeaderField: "Origin")
+        request.setValue("https://app.factory.ai/", forHTTPHeaderField: "Referer")
+        request.setValue("web-app", forHTTPHeaderField: "x-factory-client")
+        request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        if let bearerToken {
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["useCache": true], options: [])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSFactoryUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSFactoryUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            throw iOSFactoryUsageError.networkError("HTTP \(http.statusCode)")
+        }
+
+        do {
+            return try JSONDecoder().decode(iOSFactoryUsageResponse.self, from: data)
+        } catch {
+            throw iOSFactoryUsageError.parseFailed(error.localizedDescription)
+        }
+    }
+
+    private static func percentUsed(used: Int64?, allowance: Int64?, ratio: Double?) -> Double {
+        if let ratio {
+            if ratio <= 1 { return max(0, min(100, ratio * 100)) }
+            return max(0, min(100, ratio))
+        }
+        guard let used, let allowance, allowance > 0 else { return 0 }
+        return max(0, min(100, (Double(used) / Double(allowance)) * 100))
+    }
+}
+
+public enum iOSFactoryUsageMapper {
+    public static func makeSnapshot(from usage: iOSFactoryUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let planBits = [usage.tier, usage.planName].compactMap { value -> String? in
+            guard let value else { return nil }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        let planType = planBits.isEmpty ? nil : planBits.joined(separator: " • ")
+
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "factory",
+            updatedAt: generatedAt,
+            primary: .init(
+                usedPercent: usage.standardUsedPercent,
+                windowMinutes: nil,
+                resetsAt: usage.periodEnd,
+                resetDescription: "Standard tokens"),
+            secondary: usage.premiumUsedPercent.map {
+                .init(
+                    usedPercent: $0,
+                    windowMinutes: nil,
+                    resetsAt: usage.periodEnd,
+                    resetDescription: "Premium tokens")
+            },
+            tertiary: nil,
+            planType: planType,
+            creditsRemaining: nil,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["factory"], generatedAt: generatedAt)
+    }
+}
+
+// MARK: - Amp (cookie header)
+
+public struct iOSAmpUsageSnapshot: Sendable {
+    public let freeQuota: Double
+    public let freeUsed: Double
+    public let hourlyReplenishment: Double
+    public let windowHours: Double?
+    public let updatedAt: Date
+}
+
+public enum iOSAmpUsageError: LocalizedError, Sendable {
+    case invalidCredentials
+    case parseFailed(String)
+    case networkError(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            "Amp session cookie is invalid or expired."
+        case let .parseFailed(message):
+            "Amp parse error: \(message)"
+        case let .networkError(message):
+            "Amp network error: \(message)"
+        }
+    }
+}
+
+public enum iOSAmpUsageFetcher {
+    private static let settingsURL = URL(string: "https://ampcode.com/settings")!
+
+    public static func fetchUsage(cookieHeader: String) async throws -> iOSAmpUsageSnapshot {
+        let cookie = cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cookie.isEmpty else { throw iOSAmpUsageError.invalidCredentials }
+
+        var request = URLRequest(url: self.settingsURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        request.setValue(
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            forHTTPHeaderField: "accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSAmpUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSAmpUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            throw iOSAmpUsageError.networkError("HTTP \(http.statusCode)")
+        }
+
+        let html = String(data: data, encoding: .utf8) ?? ""
+        return try self.parseUsageSnapshot(html: html, now: Date())
+    }
+
+    public static func _parseUsageSnapshotForTesting(html: String, now: Date = Date()) throws -> iOSAmpUsageSnapshot {
+        try self.parseUsageSnapshot(html: html, now: now)
+    }
+
+    private static func parseUsageSnapshot(html: String, now: Date) throws -> iOSAmpUsageSnapshot {
+        guard let usage = self.parseFreeTierUsage(html) else {
+            if self.looksSignedOut(html) {
+                throw iOSAmpUsageError.invalidCredentials
+            }
+            throw iOSAmpUsageError.parseFailed("Missing free tier usage data")
+        }
+
+        return iOSAmpUsageSnapshot(
+            freeQuota: usage.quota,
+            freeUsed: usage.used,
+            hourlyReplenishment: usage.hourlyReplenishment,
+            windowHours: usage.windowHours,
+            updatedAt: now)
+    }
+
+    private struct FreeTierUsage {
+        let quota: Double
+        let used: Double
+        let hourlyReplenishment: Double
+        let windowHours: Double?
+    }
+
+    private static func parseFreeTierUsage(_ html: String) -> FreeTierUsage? {
+        for token in ["freeTierUsage", "getFreeTierUsage"] {
+            if let object = self.extractObject(named: token, in: html),
+               let quota = self.number(for: "quota", in: object),
+               let used = self.number(for: "used", in: object),
+               let hourly = self.number(for: "hourlyReplenishment", in: object)
+            {
+                return FreeTierUsage(
+                    quota: quota,
+                    used: used,
+                    hourlyReplenishment: hourly,
+                    windowHours: self.number(for: "windowHours", in: object))
+            }
+        }
+        return nil
+    }
+
+    private static func extractObject(named token: String, in text: String) -> String? {
+        guard let tokenRange = text.range(of: token),
+              let braceIndex = text[tokenRange.upperBound...].firstIndex(of: "{")
+        else {
+            return nil
+        }
+
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var idx = braceIndex
+        while idx < text.endIndex {
+            let ch = text[idx]
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if ch == "\\" {
+                    escaped = true
+                } else if ch == "\"" {
+                    inString = false
+                }
+            } else {
+                if ch == "\"" {
+                    inString = true
+                } else if ch == "{" {
+                    depth += 1
+                } else if ch == "}" {
+                    depth -= 1
+                    if depth == 0 {
+                        return String(text[braceIndex...idx])
+                    }
+                }
+            }
+            idx = text.index(after: idx)
+        }
+        return nil
+    }
+
+    private static func number(for key: String, in text: String) -> Double? {
+        let pattern = "\\b\(NSRegularExpression.escapedPattern(for: key))\\b\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              let valueRange = Range(match.range(at: 1), in: text)
+        else {
+            return nil
+        }
+        return Double(text[valueRange])
+    }
+
+    private static func looksSignedOut(_ html: String) -> Bool {
+        let lower = html.lowercased()
+        return lower.contains("sign in") || lower.contains("log in") || lower.contains("/login")
+    }
+}
+
+public enum iOSAmpUsageMapper {
+    public static func makeSnapshot(from usage: iOSAmpUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let quota = max(0, usage.freeQuota)
+        let used = max(0, usage.freeUsed)
+        let usedPercent = quota > 0 ? min(100, (used / quota) * 100) : 0
+        let windowMinutes: Int? = usage.windowHours.map { Int(($0 * 60).rounded()) }
+
+        let resetsAt: Date? = {
+            guard quota > 0, usage.hourlyReplenishment > 0 else { return nil }
+            let hoursToFull = used / usage.hourlyReplenishment
+            return generatedAt.addingTimeInterval(max(0, hoursToFull * 3600))
+        }()
+
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "amp",
+            updatedAt: generatedAt,
+            primary: .init(
+                usedPercent: usedPercent,
+                windowMinutes: windowMinutes,
+                resetsAt: resetsAt,
+                resetDescription: "Amp Free"),
+            secondary: nil,
+            tertiary: nil,
+            planType: "Amp Free",
+            creditsRemaining: nil,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["amp"], generatedAt: generatedAt)
+    }
+}
+
+// MARK: - Gemini (access token)
+
+public struct iOSGeminiModelQuota: Sendable {
+    public let modelID: String
+    public let percentLeft: Double
+    public let resetTime: Date?
+}
+
+public struct iOSGeminiUsageSnapshot: Sendable {
+    public let modelQuotas: [iOSGeminiModelQuota]
+    public let planName: String?
+    public let updatedAt: Date
+}
+
+public enum iOSGeminiUsageError: LocalizedError, Sendable {
+    case invalidCredentials
+    case networkError(String)
+    case parseFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            "Gemini access token is invalid or expired."
+        case let .networkError(message):
+            "Gemini network error: \(message)"
+        case let .parseFailed(message):
+            "Gemini parse error: \(message)"
+        }
+    }
+}
+
+private struct iOSGeminiQuotaBucket: Decodable {
+    let remainingFraction: Double?
+    let resetTime: String?
+    let modelId: String?
+}
+
+private struct iOSGeminiQuotaResponse: Decodable {
+    let buckets: [iOSGeminiQuotaBucket]?
+}
+
+public enum iOSGeminiUsageFetcher {
+    private static let quotaEndpoint = URL(string: "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota")!
+
+    public static func fetchUsage(accessToken: String, projectID: String? = nil) async throws -> iOSGeminiUsageSnapshot {
+        let token = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { throw iOSGeminiUsageError.invalidCredentials }
+
+        var request = URLRequest(url: self.quotaEndpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let projectID, !projectID.isEmpty {
+            request.httpBody = Data("{\"project\": \"\(projectID)\"}".utf8)
+        } else {
+            request.httpBody = Data("{}".utf8)
+        }
+        request.timeoutInterval = 15
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSGeminiUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSGeminiUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            throw iOSGeminiUsageError.networkError("HTTP \(http.statusCode)")
+        }
+
+        return try self.parseUsageSnapshot(data: data, now: Date())
+    }
+
+    public static func _parseUsageSnapshotForTesting(_ data: Data, now: Date = Date()) throws -> iOSGeminiUsageSnapshot {
+        try self.parseUsageSnapshot(data: data, now: now)
+    }
+
+    private static func parseUsageSnapshot(data: Data, now: Date) throws -> iOSGeminiUsageSnapshot {
+        let response = try JSONDecoder().decode(iOSGeminiQuotaResponse.self, from: data)
+        guard let buckets = response.buckets, !buckets.isEmpty else {
+            throw iOSGeminiUsageError.parseFailed("Missing quota buckets")
+        }
+
+        var modelQuotaMap: [String: (fraction: Double, reset: String?)] = [:]
+        for bucket in buckets {
+            guard let model = bucket.modelId,
+                  let fraction = bucket.remainingFraction
+            else {
+                continue
+            }
+            if let existing = modelQuotaMap[model] {
+                if fraction < existing.fraction {
+                    modelQuotaMap[model] = (fraction, bucket.resetTime)
+                }
+            } else {
+                modelQuotaMap[model] = (fraction, bucket.resetTime)
+            }
+        }
+
+        let quotas = modelQuotaMap
+            .sorted(by: { $0.key < $1.key })
+            .map { model, payload in
+                iOSGeminiModelQuota(
+                    modelID: model,
+                    percentLeft: max(0, min(100, payload.fraction * 100)),
+                    resetTime: iOSISO8601.parse(payload.reset))
+            }
+
+        if quotas.isEmpty {
+            throw iOSGeminiUsageError.parseFailed("No model quotas")
+        }
+
+        return iOSGeminiUsageSnapshot(modelQuotas: quotas, planName: nil, updatedAt: now)
+    }
+}
+
+public enum iOSGeminiUsageMapper {
+    public static func makeSnapshot(from usage: iOSGeminiUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let lower = usage.modelQuotas.map { ($0.modelID.lowercased(), $0) }
+        let pro = lower.filter { $0.0.contains("pro") }.map(\.1).min(by: { $0.percentLeft < $1.percentLeft })
+        let flash = lower.filter { $0.0.contains("flash") }.map(\.1).min(by: { $0.percentLeft < $1.percentLeft })
+        let fallback = usage.modelQuotas.min(by: { $0.percentLeft < $1.percentLeft })
+        let primaryQuota = pro ?? fallback
+
+        let primary = primaryQuota.map {
+            iOSWidgetSnapshot.RateWindow(
+                usedPercent: 100 - $0.percentLeft,
+                windowMinutes: 24 * 60,
+                resetsAt: $0.resetTime,
+                resetDescription: "Daily")
+        }
+
+        let secondary = flash.map {
+            iOSWidgetSnapshot.RateWindow(
+                usedPercent: 100 - $0.percentLeft,
+                windowMinutes: 24 * 60,
+                resetsAt: $0.resetTime,
+                resetDescription: "Daily Flash")
+        }
+
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "gemini",
+            updatedAt: generatedAt,
+            primary: primary,
+            secondary: secondary,
+            tertiary: nil,
+            planType: usage.planName,
+            creditsRemaining: nil,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["gemini"], generatedAt: generatedAt)
+    }
+}
+
+// MARK: - Vertex AI (project + access token)
+
+public struct iOSVertexAIUsageSnapshot: Sendable {
+    public let requestsUsedPercent: Double
+    public let updatedAt: Date
+}
+
+public enum iOSVertexAIUsageError: LocalizedError, Sendable {
+    case invalidCredentials
+    case noProjectID
+    case noData
+    case networkError(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCredentials:
+            "Vertex AI access token is invalid or expired."
+        case .noProjectID:
+            "Vertex AI requires a project ID. Use `project_id||access_token`."
+        case .noData:
+            "No Vertex AI quota data found for this project."
+        case let .networkError(message):
+            "Vertex AI network error: \(message)"
+        }
+    }
+}
+
+private struct iOSVertexAIMonitoringResponse: Decodable {
+    let timeSeries: [Series]?
+
+    struct Series: Decodable {
+        let metric: Metric
+        let resource: Resource
+        let points: [Point]
+
+        struct Metric: Decodable {
+            let labels: [String: String]?
+        }
+
+        struct Resource: Decodable {
+            let labels: [String: String]?
+        }
+
+        struct Point: Decodable {
+            let value: Value
+
+            struct Value: Decodable {
+                let doubleValue: Double?
+                let int64Value: String?
+            }
+        }
+    }
+}
+
+public enum iOSVertexAIUsageFetcher {
+    private static let monitoringBase = "https://monitoring.googleapis.com/v3/projects"
+
+    public static func fetchUsage(projectID: String, accessToken: String) async throws -> iOSVertexAIUsageSnapshot {
+        let projectID = projectID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let accessToken = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !projectID.isEmpty else { throw iOSVertexAIUsageError.noProjectID }
+        guard !accessToken.isEmpty else { throw iOSVertexAIUsageError.invalidCredentials }
+
+        let usageSeries = try await self.fetchSeries(
+            projectID: projectID,
+            accessToken: accessToken,
+            filter: "metric.type=\"serviceruntime.googleapis.com/quota/allocation/usage\" AND resource.type=\"consumer_quota\" AND resource.label.service=\"aiplatform.googleapis.com\"")
+
+        let limitSeries = try await self.fetchSeries(
+            projectID: projectID,
+            accessToken: accessToken,
+            filter: "metric.type=\"serviceruntime.googleapis.com/quota/limit\" AND resource.type=\"consumer_quota\" AND resource.label.service=\"aiplatform.googleapis.com\"")
+
+        let usage = self.aggregate(series: usageSeries)
+        let limits = self.aggregate(series: limitSeries)
+        guard !usage.isEmpty, !limits.isEmpty else {
+            throw iOSVertexAIUsageError.noData
+        }
+
+        var maxPercent: Double?
+        for (key, limit) in limits {
+            guard limit > 0, let used = usage[key] else { continue }
+            let percent = (used / limit) * 100.0
+            maxPercent = max(maxPercent ?? percent, percent)
+        }
+
+        guard let requestsUsedPercent = maxPercent else {
+            throw iOSVertexAIUsageError.noData
+        }
+
+        return iOSVertexAIUsageSnapshot(requestsUsedPercent: max(0, min(100, requestsUsedPercent)), updatedAt: Date())
+    }
+
+    private struct QuotaKey: Hashable {
+        let quotaMetric: String
+        let limitName: String
+        let location: String
+    }
+
+    private static func fetchSeries(
+        projectID: String,
+        accessToken: String,
+        filter: String) async throws -> [iOSVertexAIMonitoringResponse.Series]
+    {
+        let now = Date()
+        let start = now.addingTimeInterval(-(24 * 60 * 60))
+        let formatter = ISO8601DateFormatter()
+
+        guard var components = URLComponents(string: "\(self.monitoringBase)/\(projectID)/timeSeries") else {
+            throw iOSVertexAIUsageError.networkError("Invalid Monitoring URL")
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "filter", value: filter),
+            URLQueryItem(name: "interval.startTime", value: formatter.string(from: start)),
+            URLQueryItem(name: "interval.endTime", value: formatter.string(from: now)),
+            URLQueryItem(name: "aggregation.alignmentPeriod", value: "3600s"),
+            URLQueryItem(name: "aggregation.perSeriesAligner", value: "ALIGN_MAX"),
+            URLQueryItem(name: "view", value: "FULL"),
+        ]
+
+        guard let url = components.url else {
+            throw iOSVertexAIUsageError.networkError("Invalid Monitoring URL")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw iOSVertexAIUsageError.networkError("Invalid response")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw iOSVertexAIUsageError.invalidCredentials
+        }
+        guard http.statusCode == 200 else {
+            throw iOSVertexAIUsageError.networkError("HTTP \(http.statusCode)")
+        }
+
+        let decoded = try JSONDecoder().decode(iOSVertexAIMonitoringResponse.self, from: data)
+        return decoded.timeSeries ?? []
+    }
+
+    private static func aggregate(series: [iOSVertexAIMonitoringResponse.Series]) -> [QuotaKey: Double] {
+        var buckets: [QuotaKey: Double] = [:]
+
+        for entry in series {
+            let metricLabels = entry.metric.labels ?? [:]
+            let resourceLabels = entry.resource.labels ?? [:]
+            guard let quotaMetric = metricLabels["quota_metric"] ?? resourceLabels["quota_id"],
+                  !quotaMetric.isEmpty
+            else {
+                continue
+            }
+            let key = QuotaKey(
+                quotaMetric: quotaMetric,
+                limitName: metricLabels["limit_name"] ?? "",
+                location: resourceLabels["location"] ?? "global")
+
+            let maxPoint = entry.points.compactMap { point -> Double? in
+                if let double = point.value.doubleValue {
+                    return double
+                }
+                if let int64 = point.value.int64Value {
+                    return Double(int64)
+                }
+                return nil
+            }.max()
+
+            if let maxPoint {
+                buckets[key] = max(buckets[key] ?? 0, maxPoint)
+            }
+        }
+
+        return buckets
+    }
+}
+
+public enum iOSVertexAIUsageMapper {
+    public static func makeSnapshot(from usage: iOSVertexAIUsageSnapshot, generatedAt: Date = Date()) -> iOSWidgetSnapshot {
+        let entry = iOSWidgetSnapshot.ProviderEntry(
+            providerID: "vertexai",
+            updatedAt: generatedAt,
+            primary: .init(
+                usedPercent: usage.requestsUsedPercent,
+                windowMinutes: 24 * 60,
+                resetsAt: nil,
+                resetDescription: "Daily quota"),
+            secondary: nil,
+            tertiary: nil,
+            planType: "Vertex AI",
+            creditsRemaining: nil,
+            codeReviewRemainingPercent: nil,
+            tokenUsage: nil,
+            dailyUsage: [])
+
+        return iOSWidgetSnapshot(entries: [entry], enabledProviderIDs: ["vertexai"], generatedAt: generatedAt)
+    }
+}

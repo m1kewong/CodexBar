@@ -170,4 +170,125 @@ struct iOSAdditionalProvidersLiveUsageTests {
         #expect(summary.planType == "Max")
         #expect(summary.sessionRemainingPercent == 25)
     }
+
+    @Test
+    func parseClaudeUsageAndMapSnapshot() throws {
+        let json = """
+        {
+          "five_hour": {
+            "utilization": 35,
+            "resets_at": "2026-02-08T15:00:00Z"
+          },
+          "seven_day": {
+            "utilization": 64,
+            "resets_at": "2026-02-12T00:00:00Z"
+          },
+          "seven_day_opus": {
+            "utilization": 80
+          }
+        }
+        """
+
+        let usage = try iOSClaudeWebUsageFetcher._parseUsageSnapshotForTesting(
+            Data(json.utf8),
+            planName: "Claude Pro",
+            now: Date(timeIntervalSince1970: 0))
+        let widget = iOSClaudeWebUsageMapper.makeSnapshot(from: usage, generatedAt: Date(timeIntervalSince1970: 0))
+        let summary = try #require(widget.providerSummaries.first)
+
+        #expect(summary.providerID == "claude")
+        #expect(summary.planType == "Claude Pro")
+        #expect(summary.sessionRemainingPercent == 65)
+        #expect(summary.weeklyRemainingPercent == 36)
+    }
+
+    @Test
+    func parseCursorUsageAndMapSnapshot() throws {
+        let json = """
+        {
+          "billingCycleEnd": "2026-02-28T00:00:00Z",
+          "membershipType": "pro",
+          "individualUsage": {
+            "plan": { "used": 500, "limit": 2000, "totalPercentUsed": 0.25 },
+            "onDemand": { "used": 250, "limit": 1000 }
+          }
+        }
+        """
+
+        let usage = try iOSCursorUsageFetcher._parseUsageSnapshotForTesting(
+            Data(json.utf8),
+            now: Date(timeIntervalSince1970: 0))
+        let widget = iOSCursorUsageMapper.makeSnapshot(from: usage, generatedAt: Date(timeIntervalSince1970: 0))
+        let summary = try #require(widget.providerSummaries.first)
+
+        #expect(summary.providerID == "cursor")
+        #expect(summary.planType == "pro")
+        #expect(summary.sessionRemainingPercent == 75)
+        #expect(summary.weeklyRemainingPercent == 75)
+    }
+
+    @Test
+    func parseOpenCodeUsageAndMapSnapshot() throws {
+        let text = """
+        rollingUsage: { usagePercent: 30, resetInSec: 3600 },
+        weeklyUsage: { usagePercent: 70, resetInSec: 86400 }
+        """
+
+        let usage = try iOSOpenCodeUsageFetcher._parseSubscriptionForTesting(text, now: Date(timeIntervalSince1970: 0))
+        let widget = iOSOpenCodeUsageMapper.makeSnapshot(from: usage, generatedAt: Date(timeIntervalSince1970: 0))
+        let summary = try #require(widget.providerSummaries.first)
+
+        #expect(summary.providerID == "opencode")
+        #expect(summary.sessionRemainingPercent == 70)
+        #expect(summary.weeklyRemainingPercent == 30)
+    }
+
+    @Test
+    func parseAmpUsageAndMapSnapshot() throws {
+        let html = """
+        <script>
+        const freeTierUsage = { quota: 1000, used: 250, hourlyReplenishment: 25, windowHours: 12 };
+        </script>
+        """
+
+        let usage = try iOSAmpUsageFetcher._parseUsageSnapshotForTesting(
+            html: html,
+            now: Date(timeIntervalSince1970: 0))
+        let widget = iOSAmpUsageMapper.makeSnapshot(from: usage, generatedAt: Date(timeIntervalSince1970: 0))
+        let summary = try #require(widget.providerSummaries.first)
+
+        #expect(summary.providerID == "amp")
+        #expect(summary.planType == "Amp Free")
+        #expect(summary.sessionRemainingPercent == 75)
+    }
+
+    @Test
+    func parseGeminiQuotaAndMapSnapshot() throws {
+        let json = """
+        {
+          "buckets": [
+            {
+              "remainingFraction": 0.8,
+              "resetTime": "2026-02-08T23:00:00Z",
+              "modelId": "gemini-2.5-pro"
+            },
+            {
+              "remainingFraction": 0.4,
+              "resetTime": "2026-02-08T23:00:00Z",
+              "modelId": "gemini-2.5-flash"
+            }
+          ]
+        }
+        """
+
+        let usage = try iOSGeminiUsageFetcher._parseUsageSnapshotForTesting(
+            Data(json.utf8),
+            now: Date(timeIntervalSince1970: 0))
+        let widget = iOSGeminiUsageMapper.makeSnapshot(from: usage, generatedAt: Date(timeIntervalSince1970: 0))
+        let summary = try #require(widget.providerSummaries.first)
+
+        #expect(summary.providerID == "gemini")
+        #expect(summary.sessionRemainingPercent == 80)
+        #expect(summary.weeklyRemainingPercent == 40)
+    }
 }

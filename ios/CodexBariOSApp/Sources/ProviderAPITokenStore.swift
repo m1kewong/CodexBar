@@ -5,6 +5,14 @@ enum ProviderAPITokenStore {
     private static let service = "com.steipete.codexbar.ios"
 
     private static let accounts: [String: String] = [
+        "claude": "claude-session-credential",
+        "cursor": "cursor-cookie-header",
+        "opencode": "opencode-cookie-header",
+        "augment": "augment-cookie-header",
+        "factory": "factory-cookie-header",
+        "amp": "amp-cookie-header",
+        "gemini": "gemini-access-token",
+        "vertexai": "vertexai-credential",
         "zai": "zai-api-token",
         "minimax": "minimax-api-token",
         "synthetic": "synthetic-api-token",
