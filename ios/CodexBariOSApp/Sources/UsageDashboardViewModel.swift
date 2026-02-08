@@ -29,6 +29,14 @@ final class UsageDashboardViewModel {
     var codexDeviceCode: iOSCodexOAuthDeviceCode?
     var hasCodexCredentials = false
 
+    var providerTokenDrafts: [String: String] = [:]
+    var providerStatusMessages: [String: String] = [:]
+    var providerErrorMessages: [String: String] = [:]
+    var providerHasToken: [String: Bool] = [:]
+    var providerRefreshingIDs: Set<String> = []
+
+    private static let apiTokenProviderIDs = ["zai", "minimax", "synthetic", "kimik2", "kimi"]
+
     var selectedSummary: iOSWidgetSnapshot.ProviderSummary? {
         guard let snapshot else { return nil }
         let selected = snapshot.selectedProviderID(preferred: self.selectedProviderID)
@@ -43,6 +51,7 @@ final class UsageDashboardViewModel {
         self.importErrorMessage = nil
         self.hasCopilotToken = CopilotTokenStore.load() != nil
         self.hasCodexCredentials = CodexCredentialsStore.load() != nil
+        self.refreshProviderTokenPresence()
     }
 
     func loadSampleData() {
@@ -73,6 +82,82 @@ final class UsageDashboardViewModel {
             self.importJSON = ""
         } catch {
             self.importErrorMessage = "Invalid snapshot JSON: \(error.localizedDescription)"
+        }
+    }
+
+    func tokenDraft(for providerID: String) -> String {
+        self.providerTokenDrafts[providerID] ?? ""
+    }
+
+    func setTokenDraft(_ value: String, for providerID: String) {
+        self.providerTokenDrafts[providerID] = value
+    }
+
+    func hasProviderToken(_ providerID: String) -> Bool {
+        self.providerHasToken[providerID] ?? false
+    }
+
+    func providerStatus(for providerID: String) -> String? {
+        self.providerStatusMessages[providerID]
+    }
+
+    func providerError(for providerID: String) -> String? {
+        self.providerErrorMessages[providerID]
+    }
+
+    func isProviderRefreshing(_ providerID: String) -> Bool {
+        self.providerRefreshingIDs.contains(providerID)
+    }
+
+    func saveProviderToken(_ providerID: String) {
+        guard Self.apiTokenProviderIDs.contains(providerID) else { return }
+        let token = self.providerTokenDrafts[providerID]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !token.isEmpty else {
+            self.providerErrorMessages[providerID] = "Paste a token first."
+            self.providerStatusMessages[providerID] = nil
+            return
+        }
+
+        ProviderAPITokenStore.save(token, for: providerID)
+        self.providerHasToken[providerID] = true
+        self.providerErrorMessages[providerID] = nil
+        self.providerStatusMessages[providerID] = "Credentials saved in Keychain."
+    }
+
+    func clearProviderToken(_ providerID: String) {
+        guard Self.apiTokenProviderIDs.contains(providerID) else { return }
+        ProviderAPITokenStore.clear(providerID)
+        self.providerTokenDrafts[providerID] = ""
+        self.providerHasToken[providerID] = false
+        self.providerErrorMessages[providerID] = nil
+        self.providerStatusMessages[providerID] = "Credentials removed."
+    }
+
+    func refreshProviderUsage(_ providerID: String) async {
+        guard Self.apiTokenProviderIDs.contains(providerID) else { return }
+        guard let token = ProviderAPITokenStore.load(providerID), !token.isEmpty else {
+            self.providerHasToken[providerID] = false
+            self.providerStatusMessages[providerID] = "Save credentials first."
+            self.providerErrorMessages[providerID] = nil
+            return
+        }
+
+        self.providerHasToken[providerID] = true
+        self.providerErrorMessages[providerID] = nil
+        self.providerStatusMessages[providerID] = "Refreshing \(iOSProviderCatalog.displayName(for: providerID)) usage…"
+        self.providerRefreshingIDs.insert(providerID)
+        defer { self.providerRefreshingIDs.remove(providerID) }
+
+        do {
+            let providerSnapshot = try await self.fetchProviderSnapshot(providerID, token: token)
+            self.mergeAndPersist(providerSnapshot: providerSnapshot, providerID: providerID)
+            self.selectedProviderID = providerID
+            iOSWidgetSnapshotStore.saveSelectedProviderID(providerID)
+            WidgetCenter.shared.reloadAllTimelines()
+            self.providerStatusMessages[providerID] = "Usage updated."
+        } catch {
+            self.providerStatusMessages[providerID] = nil
+            self.providerErrorMessages[providerID] = "Refresh failed: \(error.localizedDescription)"
         }
     }
 
@@ -291,6 +376,34 @@ final class UsageDashboardViewModel {
         self.codexRefreshStatusMessage = "Codex refresh failed: \(error.localizedDescription)"
     }
 
+    private func fetchProviderSnapshot(_ providerID: String, token: String) async throws -> iOSWidgetSnapshot {
+        switch providerID {
+        case "zai":
+            let usage = try await iOSZaiUsageFetcher.fetchUsage(apiKey: token)
+            return iOSZaiUsageMapper.makeSnapshot(from: usage)
+        case "minimax":
+            let usage = try await iOSMiniMaxUsageFetcher.fetchUsage(apiToken: token)
+            return iOSMiniMaxUsageMapper.makeSnapshot(from: usage)
+        case "synthetic":
+            let usage = try await iOSSyntheticUsageFetcher.fetchUsage(apiKey: token)
+            return iOSSyntheticUsageMapper.makeSnapshot(from: usage)
+        case "kimik2":
+            let usage = try await iOSKimiK2UsageFetcher.fetchUsage(apiKey: token)
+            return iOSKimiK2UsageMapper.makeSnapshot(from: usage)
+        case "kimi":
+            let response = try await iOSKimiUsageFetcher(authToken: token).fetch()
+            return try iOSKimiUsageMapper.makeSnapshot(from: response)
+        default:
+            throw UnsupportedProviderError(providerID: providerID)
+        }
+    }
+
+    private func refreshProviderTokenPresence() {
+        for providerID in Self.apiTokenProviderIDs {
+            self.providerHasToken[providerID] = ProviderAPITokenStore.load(providerID) != nil
+        }
+    }
+
     private func mergeAndPersist(providerSnapshot: iOSWidgetSnapshot, providerID: String) {
         guard let providerEntry = providerSnapshot.entries.first else { return }
         let base = self.snapshot
@@ -311,5 +424,13 @@ final class UsageDashboardViewModel {
 
     private func mergeAndPersist(copilotSnapshot: iOSWidgetSnapshot) {
         self.mergeAndPersist(providerSnapshot: copilotSnapshot, providerID: "copilot")
+    }
+}
+
+private struct UnsupportedProviderError: LocalizedError {
+    let providerID: String
+
+    var errorDescription: String? {
+        "Unsupported provider: \(self.providerID)"
     }
 }

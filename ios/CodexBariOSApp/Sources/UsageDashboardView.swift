@@ -43,6 +43,7 @@ struct UsageDashboardView: View {
             VStack(alignment: .leading, spacing: 16) {
                 self.codexAuthCard
                 self.copilotAuthCard
+                self.additionalProviderCards
 
                 let available = snapshot.availableProviderIDs
                 if available.count > 1 {
@@ -98,10 +99,11 @@ struct UsageDashboardView: View {
             VStack(spacing: 12) {
                 self.codexAuthCard
                 self.copilotAuthCard
+                self.additionalProviderCards
 
                 Text("No usage snapshot yet")
                     .font(.headline)
-                Text("Use ChatGPT/Codex or GitHub sign-in with live refresh, import `widget-snapshot.json`, or load sample data.")
+                Text("Use live sign-in, provider API keys, import `widget-snapshot.json`, or load sample data.")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -280,6 +282,69 @@ struct UsageDashboardView: View {
         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
     }
 
+    private var additionalProviderCards: some View {
+        ForEach(Self.tokenProviderConfigs) { config in
+            self.tokenProviderCard(config)
+        }
+    }
+
+    private func tokenProviderCard(_ config: TokenProviderCardConfig) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(config.title)
+                .font(.headline)
+
+            Text(config.subtitle)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            SecureField(config.placeholder, text: Binding(
+                get: { self.viewModel.tokenDraft(for: config.id) },
+                set: { self.viewModel.setTokenDraft($0, for: config.id) }))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.footnote.monospaced())
+                .padding(10)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+
+            if self.viewModel.hasProviderToken(config.id) {
+                Text("Credentials are stored in Keychain.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("Save Credentials") {
+                    self.viewModel.saveProviderToken(config.id)
+                }
+                .buttonStyle(.bordered)
+
+                Button("Refresh Usage") {
+                    Task { await self.viewModel.refreshProviderUsage(config.id) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!self.viewModel.hasProviderToken(config.id) || self.viewModel.isProviderRefreshing(config.id))
+
+                Button("Clear") {
+                    self.viewModel.clearProviderToken(config.id)
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if let status = self.viewModel.providerStatus(for: config.id) {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if let error = self.viewModel.providerError(for: config.id) {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(16)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+    }
+
     private static func relativeDate(_ value: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
@@ -318,6 +383,41 @@ struct UsageDashboardView: View {
             .map { $0.capitalized }
             .joined(separator: " ")
     }
+
+    private static let tokenProviderConfigs: [TokenProviderCardConfig] = [
+        .init(
+            id: "zai",
+            title: "z.ai (API key)",
+            subtitle: "Paste your z.ai API token to fetch quota usage directly.",
+            placeholder: "z.ai API token"),
+        .init(
+            id: "minimax",
+            title: "MiniMax (API key)",
+            subtitle: "Use your MiniMax Open Platform API token for coding plan remains.",
+            placeholder: "MiniMax API token"),
+        .init(
+            id: "synthetic",
+            title: "Synthetic (API key)",
+            subtitle: "Use your Synthetic API key to fetch quotas from api.synthetic.new.",
+            placeholder: "Synthetic API key"),
+        .init(
+            id: "kimik2",
+            title: "Kimi K2 (API key)",
+            subtitle: "Use your Kimi K2 API key to fetch credit usage.",
+            placeholder: "Kimi K2 API key"),
+        .init(
+            id: "kimi",
+            title: "Kimi (auth token)",
+            subtitle: "Paste your Kimi auth token (JWT) to fetch coding quota usage.",
+            placeholder: "Kimi auth token"),
+    ]
+}
+
+private struct TokenProviderCardConfig: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let placeholder: String
 }
 
 private struct UsageBarRow: View {

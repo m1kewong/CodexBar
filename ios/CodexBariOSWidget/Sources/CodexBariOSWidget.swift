@@ -10,6 +10,9 @@ enum ProviderChoice: String, AppEnum {
     case cursor
     case copilot
     case minimax
+    case kimi
+    case kimik2
+    case synthetic
     case opencode
     case zai
 
@@ -22,6 +25,9 @@ enum ProviderChoice: String, AppEnum {
         .cursor: .init(title: "Cursor"),
         .copilot: .init(title: "Copilot"),
         .minimax: .init(title: "MiniMax"),
+        .kimi: .init(title: "Kimi"),
+        .kimik2: .init(title: "Kimi K2"),
+        .synthetic: .init(title: "Synthetic"),
         .opencode: .init(title: "OpenCode"),
         .zai: .init(title: "z.ai"),
     ]

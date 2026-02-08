@@ -1,0 +1,499 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0373FC3E510F0C66039DA574 /* CodexBariOSShared in Frameworks */ = {isa = PBXBuildFile; productRef = D44316341F95078F5BB36688 /* CodexBariOSShared */; };
+		08AB0474CE9314756D95C2D8 /* CopilotTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B914C62FC3288C34B0B7B8AB /* CopilotTokenStore.swift */; };
+		09B0A5FE199F2D4DF740DED5 /* CodexCredentialsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 559197022032A7794F3F262E /* CodexCredentialsStore.swift */; };
+		1A482D2AD0E9AD0EF1A0C2B7 /* CodexBariOSWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 041B625F0BB1E60AE4D5686D /* CodexBariOSWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1EBC3B03A11A791B2CC0A63E /* CodexBariOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757C29A86CC951F0AFFCF216 /* CodexBariOSApp.swift */; };
+		47DD1500B8D264F3DC056A90 /* UsageDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A026E32E67B4A36611E489 /* UsageDashboardView.swift */; };
+		7F7CBDDBD500EFCBC5787CF4 /* UsageDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D1AB03905379A6674460FB /* UsageDashboardViewModel.swift */; };
+		B32531EC00CA22347A64123D /* ProviderAPITokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E9CDFA02FB2CC8F1C3B53E2 /* ProviderAPITokenStore.swift */; };
+		C27D48D3CA1C1AD7963CE976 /* CodexBariOSWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E5C6C45AFC714DDB09CB98F /* CodexBariOSWidgetBundle.swift */; };
+		F2D254CFDF766C2281418CA1 /* CodexBariOSShared in Frameworks */ = {isa = PBXBuildFile; productRef = CDE8B9D2900811AE9BB71CA2 /* CodexBariOSShared */; };
+		F680CF249F02F5B87C368393 /* CodexBariOSWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6504C506BF1D009EFCE1B6EA /* CodexBariOSWidget.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		FFCD6E74462DE9F8FA60D13C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FD465C5D9CD8D6B970A0A78C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F2971B1A996D80BE2956873E;
+			remoteInfo = CodexBariOSWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		8E3AD4E3B84A3E9AC0143C3D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				1A482D2AD0E9AD0EF1A0C2B7 /* CodexBariOSWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		041B625F0BB1E60AE4D5686D /* CodexBariOSWidgetExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = CodexBariOSWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1E1C2F121260952F49212651 /* CodexBariOSApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CodexBariOSApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		39A026E32E67B4A36611E489 /* UsageDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageDashboardView.swift; sourceTree = "<group>"; };
+		3E9CDFA02FB2CC8F1C3B53E2 /* ProviderAPITokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderAPITokenStore.swift; sourceTree = "<group>"; };
+		42D1AB03905379A6674460FB /* UsageDashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageDashboardViewModel.swift; sourceTree = "<group>"; };
+		559197022032A7794F3F262E /* CodexCredentialsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexCredentialsStore.swift; sourceTree = "<group>"; };
+		6504C506BF1D009EFCE1B6EA /* CodexBariOSWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexBariOSWidget.swift; sourceTree = "<group>"; };
+		757C29A86CC951F0AFFCF216 /* CodexBariOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexBariOSApp.swift; sourceTree = "<group>"; };
+		75F11CFD8A25DC91115B7779 /* codexbar_fork */ = {isa = PBXFileReference; lastKnownFileType = folder; name = codexbar_fork; path = ..; sourceTree = SOURCE_ROOT; };
+		7E5C6C45AFC714DDB09CB98F /* CodexBariOSWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexBariOSWidgetBundle.swift; sourceTree = "<group>"; };
+		B914C62FC3288C34B0B7B8AB /* CopilotTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotTokenStore.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		82C1AA04927B0CF7C634456D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0373FC3E510F0C66039DA574 /* CodexBariOSShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A2D1E29AC1A0E48299BBCCB7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F2D254CFDF766C2281418CA1 /* CodexBariOSShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		2B07B442FB3544CA39C55303 /* CodexBariOSApp */ = {
+			isa = PBXGroup;
+			children = (
+				6DE288E329412034174BADCA /* Sources */,
+			);
+			path = CodexBariOSApp;
+			sourceTree = "<group>";
+		};
+		3A12DB090119D9C70F388058 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				6504C506BF1D009EFCE1B6EA /* CodexBariOSWidget.swift */,
+				7E5C6C45AFC714DDB09CB98F /* CodexBariOSWidgetBundle.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		6DE288E329412034174BADCA /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				757C29A86CC951F0AFFCF216 /* CodexBariOSApp.swift */,
+				559197022032A7794F3F262E /* CodexCredentialsStore.swift */,
+				B914C62FC3288C34B0B7B8AB /* CopilotTokenStore.swift */,
+				3E9CDFA02FB2CC8F1C3B53E2 /* ProviderAPITokenStore.swift */,
+				39A026E32E67B4A36611E489 /* UsageDashboardView.swift */,
+				42D1AB03905379A6674460FB /* UsageDashboardViewModel.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		8C7A83E10F7BFA96FA67119A /* CodexBariOSWidget */ = {
+			isa = PBXGroup;
+			children = (
+				3A12DB090119D9C70F388058 /* Sources */,
+			);
+			path = CodexBariOSWidget;
+			sourceTree = "<group>";
+		};
+		8E2ED50C2F99D983878D8CAF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1E1C2F121260952F49212651 /* CodexBariOSApp.app */,
+				041B625F0BB1E60AE4D5686D /* CodexBariOSWidgetExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C7223BCF90A85F8F5DDB2448 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				75F11CFD8A25DC91115B7779 /* codexbar_fork */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		F88C6809131DF6688499B009 = {
+			isa = PBXGroup;
+			children = (
+				2B07B442FB3544CA39C55303 /* CodexBariOSApp */,
+				8C7A83E10F7BFA96FA67119A /* CodexBariOSWidget */,
+				C7223BCF90A85F8F5DDB2448 /* Packages */,
+				8E2ED50C2F99D983878D8CAF /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4E647828A240DDA7D3633FB1 /* CodexBariOSApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A6FCB1BE7F41540EBCE93CD2 /* Build configuration list for PBXNativeTarget "CodexBariOSApp" */;
+			buildPhases = (
+				747F919819EE28C18DC7A474 /* Sources */,
+				A2D1E29AC1A0E48299BBCCB7 /* Frameworks */,
+				8E3AD4E3B84A3E9AC0143C3D /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CEFD1F0F463B6154BB0413F8 /* PBXTargetDependency */,
+			);
+			name = CodexBariOSApp;
+			packageProductDependencies = (
+				CDE8B9D2900811AE9BB71CA2 /* CodexBariOSShared */,
+			);
+			productName = CodexBariOSApp;
+			productReference = 1E1C2F121260952F49212651 /* CodexBariOSApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F2971B1A996D80BE2956873E /* CodexBariOSWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 45E21FC09A6AA60B85EC4411 /* Build configuration list for PBXNativeTarget "CodexBariOSWidgetExtension" */;
+			buildPhases = (
+				BD7315B08C1A6B43D03FE6F6 /* Sources */,
+				82C1AA04927B0CF7C634456D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CodexBariOSWidgetExtension;
+			packageProductDependencies = (
+				D44316341F95078F5BB36688 /* CodexBariOSShared */,
+			);
+			productName = CodexBariOSWidgetExtension;
+			productReference = 041B625F0BB1E60AE4D5686D /* CodexBariOSWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FD465C5D9CD8D6B970A0A78C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+			};
+			buildConfigurationList = 0E130942D13B58FA2918C514 /* Build configuration list for PBXProject "CodexBariOS" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = F88C6809131DF6688499B009;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				313DB4F30E6225E5DD7B6B72 /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4E647828A240DDA7D3633FB1 /* CodexBariOSApp */,
+				F2971B1A996D80BE2956873E /* CodexBariOSWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		747F919819EE28C18DC7A474 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1EBC3B03A11A791B2CC0A63E /* CodexBariOSApp.swift in Sources */,
+				09B0A5FE199F2D4DF740DED5 /* CodexCredentialsStore.swift in Sources */,
+				08AB0474CE9314756D95C2D8 /* CopilotTokenStore.swift in Sources */,
+				B32531EC00CA22347A64123D /* ProviderAPITokenStore.swift in Sources */,
+				47DD1500B8D264F3DC056A90 /* UsageDashboardView.swift in Sources */,
+				7F7CBDDBD500EFCBC5787CF4 /* UsageDashboardViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD7315B08C1A6B43D03FE6F6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F680CF249F02F5B87C368393 /* CodexBariOSWidget.swift in Sources */,
+				C27D48D3CA1C1AD7963CE976 /* CodexBariOSWidgetBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CEFD1F0F463B6154BB0413F8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F2971B1A996D80BE2956873E /* CodexBariOSWidgetExtension */;
+			targetProxy = FFCD6E74462DE9F8FA60D13C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		27AF1F3961F2B4BD983B16F7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3732F85BEF61057A34726CBF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = CodexBariOSApp/CodexBariOSApp.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = CodexBariOSApp/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.steipete.codexbar.ios;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		708DB4A4BBE670CFE5FBE1CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = CodexBariOSWidget/CodexBariOSWidget.entitlements;
+				INFOPLIST_FILE = CodexBariOSWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.steipete.codexbar.ios.widget;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8FB14D9F76A580E05C7A141E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C3584EBBF52A74FE77D8A523 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = CodexBariOSWidget/CodexBariOSWidget.entitlements;
+				INFOPLIST_FILE = CodexBariOSWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.steipete.codexbar.ios.widget;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E7EBF026F4E52AB6A8A625A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = CodexBariOSApp/CodexBariOSApp.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = CodexBariOSApp/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.steipete.codexbar.ios;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0E130942D13B58FA2918C514 /* Build configuration list for PBXProject "CodexBariOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				27AF1F3961F2B4BD983B16F7 /* Debug */,
+				8FB14D9F76A580E05C7A141E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		45E21FC09A6AA60B85EC4411 /* Build configuration list for PBXNativeTarget "CodexBariOSWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C3584EBBF52A74FE77D8A523 /* Debug */,
+				708DB4A4BBE670CFE5FBE1CC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A6FCB1BE7F41540EBCE93CD2 /* Build configuration list for PBXNativeTarget "CodexBariOSApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3732F85BEF61057A34726CBF /* Debug */,
+				E7EBF026F4E52AB6A8A625A5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		313DB4F30E6225E5DD7B6B72 /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CDE8B9D2900811AE9BB71CA2 /* CodexBariOSShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodexBariOSShared;
+		};
+		D44316341F95078F5BB36688 /* CodexBariOSShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CodexBariOSShared;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = FD465C5D9CD8D6B970A0A78C /* Project object */;
+}

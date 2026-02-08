@@ -55,10 +55,16 @@ The expected JSON schema matches CodexBar's widget snapshot format (`provider`, 
   - complete OAuth code exchange in-app
   - refresh OAuth tokens as needed
   - fetch live Codex usage (`plus`, `pro`, etc.) and persist widget snapshot
+- Additional live provider refresh via saved API credentials in iOS Keychain:
+  - z.ai (`Z_AI_API_KEY` equivalent)
+  - MiniMax API token
+  - Synthetic API key
+  - Kimi K2 API key
+  - Kimi auth token
 - If no snapshot exists, app can load sample data.
 - You can still paste/import snapshot JSON directly in the app.
 - Widget renders the selected provider from snapshot data.
 
 ## Known gap
 
-- Other provider-native iOS auth flows (Claude/Gemini/etc.) are not implemented yet in this scaffold.
+- Browser-cookie/native iOS auth flows for providers like Claude/Gemini/Cursor/OpenCode are not implemented yet in this scaffold.
