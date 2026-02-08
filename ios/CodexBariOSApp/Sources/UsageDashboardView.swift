@@ -41,6 +41,7 @@ struct UsageDashboardView: View {
     {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                self.codexAuthCard
                 self.copilotAuthCard
 
                 let available = snapshot.availableProviderIDs
@@ -63,6 +64,8 @@ struct UsageDashboardView: View {
                     Text("Updated \(Self.relativeDate(summary.updatedAt))")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    ValueRow(title: "Plan", value: Self.planLabel(summary.planType))
 
                     UsageBarRow(title: "Session", percentLeft: summary.sessionRemainingPercent, tint: .teal)
                     UsageBarRow(title: "Weekly", percentLeft: summary.weeklyRemainingPercent, tint: .orange)
@@ -93,11 +96,12 @@ struct UsageDashboardView: View {
     private var emptyState: some View {
         ScrollView {
             VStack(spacing: 12) {
+                self.codexAuthCard
                 self.copilotAuthCard
 
                 Text("No usage snapshot yet")
                     .font(.headline)
-                Text("Use GitHub sign-in + live refresh, import `widget-snapshot.json`, or load sample data.")
+                Text("Use ChatGPT/Codex or GitHub sign-in with live refresh, import `widget-snapshot.json`, or load sample data.")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -108,6 +112,89 @@ struct UsageDashboardView: View {
             }
             .padding(24)
         }
+    }
+
+    private var codexAuthCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Codex (ChatGPT OAuth)")
+                .font(.headline)
+
+            if self.viewModel.hasCodexCredentials {
+                Text("Signed in. Refresh to pull live Codex usage for your Plus/Pro account.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button("Refresh Codex Usage") {
+                        Task { await self.viewModel.refreshCodexUsage() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(self.viewModel.isRefreshingCodexUsage || self.viewModel.isAuthenticatingCodex)
+
+                    Button("Sign Out") {
+                        self.viewModel.clearCodexCredentials()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
+                Text("Sign in with ChatGPT Device Flow to fetch real Codex usage.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button("Start ChatGPT Sign-In") {
+                    Task { await self.viewModel.startCodexDeviceLogin() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(self.viewModel.isAuthenticatingCodex)
+            }
+
+            if let code = self.viewModel.codexDeviceCode {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Verification Code")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(code.userCode)
+                        .font(.title3.weight(.bold))
+                        .textSelection(.enabled)
+                    Text(code.verificationURL)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    HStack {
+                        Button("Open ChatGPT") {
+                            self.viewModel.openCodexVerificationURL()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Complete Sign-In") {
+                            Task { await self.viewModel.completeCodexDeviceLogin() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(self.viewModel.isAuthenticatingCodex)
+                    }
+                }
+                .padding(10)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            if let status = self.viewModel.codexAuthStatusMessage {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if let status = self.viewModel.codexRefreshStatusMessage {
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if let error = self.viewModel.codexAuthErrorMessage {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(16)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var copilotAuthCard: some View {
@@ -221,6 +308,15 @@ struct UsageDashboardView: View {
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private static func planLabel(_ value: String?) -> String {
+        guard let value else { return "—" }
+        return value
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 }
 

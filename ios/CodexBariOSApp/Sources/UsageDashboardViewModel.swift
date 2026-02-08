@@ -17,10 +17,17 @@ final class UsageDashboardViewModel {
     var authErrorMessage: String?
     var authStatusMessage: String?
     var liveRefreshStatusMessage: String?
+    var codexAuthErrorMessage: String?
+    var codexAuthStatusMessage: String?
+    var codexRefreshStatusMessage: String?
     var isAuthenticatingCopilot = false
     var isRefreshingCopilotUsage = false
     var copilotDeviceCode: iOSCopilotDeviceFlow.DeviceCodeResponse?
     var hasCopilotToken = false
+    var isAuthenticatingCodex = false
+    var isRefreshingCodexUsage = false
+    var codexDeviceCode: iOSCodexOAuthDeviceCode?
+    var hasCodexCredentials = false
 
     var selectedSummary: iOSWidgetSnapshot.ProviderSummary? {
         guard let snapshot else { return nil }
@@ -35,6 +42,7 @@ final class UsageDashboardViewModel {
         self.selectedProviderID = snapshot?.selectedProviderID(preferred: storedProvider ?? self.selectedProviderID)
         self.importErrorMessage = nil
         self.hasCopilotToken = CopilotTokenStore.load() != nil
+        self.hasCodexCredentials = CodexCredentialsStore.load() != nil
     }
 
     func loadSampleData() {
@@ -153,15 +161,145 @@ final class UsageDashboardViewModel {
         }
     }
 
-    private func mergeAndPersist(copilotSnapshot: iOSWidgetSnapshot) {
-        guard let copilotEntry = copilotSnapshot.entries.first else { return }
+    func startCodexDeviceLogin() async {
+        self.codexAuthErrorMessage = nil
+        self.codexAuthStatusMessage = nil
+        self.isAuthenticatingCodex = true
+        defer { self.isAuthenticatingCodex = false }
+
+        do {
+            let flow = iOSCodexDeviceAuthFlow()
+            let code = try await flow.requestDeviceCode()
+            self.codexDeviceCode = code
+            self.codexAuthStatusMessage = "Code ready. Open ChatGPT and authorize this device."
+        } catch {
+            self.codexAuthErrorMessage = "Could not start Codex device login: \(error.localizedDescription)"
+        }
+    }
+
+    func openCodexVerificationURL() {
+        guard let rawURL = self.codexDeviceCode?.verificationURL,
+              let url = URL(string: rawURL)
+        else {
+            return
+        }
+        #if canImport(UIKit)
+        UIApplication.shared.open(url)
+        #endif
+    }
+
+    func completeCodexDeviceLogin() async {
+        guard let code = self.codexDeviceCode else {
+            self.codexAuthErrorMessage = "Start device login first."
+            return
+        }
+
+        self.codexAuthErrorMessage = nil
+        self.codexAuthStatusMessage = "Waiting for ChatGPT authorization confirmation…"
+        self.isAuthenticatingCodex = true
+        defer { self.isAuthenticatingCodex = false }
+
+        do {
+            let flow = iOSCodexDeviceAuthFlow()
+            let credentials = try await flow.completeDeviceCodeLogin(code)
+            CodexCredentialsStore.save(credentials)
+            self.hasCodexCredentials = true
+            self.codexDeviceCode = nil
+            self.codexAuthStatusMessage = "Codex sign-in complete."
+        } catch is CancellationError {
+            self.codexAuthStatusMessage = "Codex sign-in cancelled."
+        } catch {
+            self.codexAuthErrorMessage = "Codex sign-in failed: \(error.localizedDescription)"
+        }
+    }
+
+    func clearCodexCredentials() {
+        CodexCredentialsStore.clear()
+        self.hasCodexCredentials = false
+        self.codexAuthStatusMessage = "Codex credentials removed."
+        self.codexDeviceCode = nil
+    }
+
+    func refreshCodexUsage() async {
+        guard var credentials = CodexCredentialsStore.load() else {
+            self.codexRefreshStatusMessage = "Sign in to Codex first."
+            self.hasCodexCredentials = false
+            return
+        }
+
+        self.codexAuthErrorMessage = nil
+        self.codexRefreshStatusMessage = "Refreshing live Codex usage…"
+        self.isRefreshingCodexUsage = true
+        defer { self.isRefreshingCodexUsage = false }
+
+        do {
+            if credentials.needsRefresh {
+                credentials = try await iOSCodexTokenRefresher.refresh(credentials)
+                CodexCredentialsStore.save(credentials)
+            }
+
+            let response = try await iOSCodexUsageFetcher.fetchUsage(credentials: credentials)
+            self.applyCodexUsageRefreshResult(response: response, credentials: credentials)
+        } catch iOSCodexOAuthFetchError.unauthorized {
+            do {
+                credentials = try await iOSCodexTokenRefresher.refresh(credentials)
+                CodexCredentialsStore.save(credentials)
+                let response = try await iOSCodexUsageFetcher.fetchUsage(credentials: credentials)
+                self.applyCodexUsageRefreshResult(response: response, credentials: credentials)
+            } catch {
+                self.handleCodexRefreshError(error)
+            }
+        } catch {
+            self.handleCodexRefreshError(error)
+        }
+    }
+
+    private func applyCodexUsageRefreshResult(
+        response: iOSCodexUsageResponse,
+        credentials: iOSCodexOAuthCredentials)
+    {
+        let codexSnapshot = iOSCodexUsageMapper.makeSnapshot(from: response, credentials: credentials)
+        self.mergeAndPersist(providerSnapshot: codexSnapshot, providerID: "codex")
+        self.selectedProviderID = "codex"
+        iOSWidgetSnapshotStore.saveSelectedProviderID("codex")
+        WidgetCenter.shared.reloadAllTimelines()
+        self.codexRefreshStatusMessage = "Codex usage updated."
+        self.hasCodexCredentials = true
+    }
+
+    private func handleCodexRefreshError(_ error: Error) {
+        if let refreshError = error as? iOSCodexTokenRefresher.RefreshError {
+            switch refreshError {
+            case .expired, .revoked, .reused:
+                CodexCredentialsStore.clear()
+                self.hasCodexCredentials = false
+                self.codexDeviceCode = nil
+            case .networkError, .invalidResponse:
+                break
+            }
+        } else if let fetchError = error as? iOSCodexOAuthFetchError {
+            switch fetchError {
+            case .unauthorized:
+                CodexCredentialsStore.clear()
+                self.hasCodexCredentials = false
+                self.codexDeviceCode = nil
+            case .invalidResponse, .serverError, .networkError:
+                break
+            }
+        }
+
+        self.codexRefreshStatusMessage = "Codex refresh failed: \(error.localizedDescription)"
+    }
+
+    private func mergeAndPersist(providerSnapshot: iOSWidgetSnapshot, providerID: String) {
+        guard let providerEntry = providerSnapshot.entries.first else { return }
         let base = self.snapshot
 
-        var entries = base?.entries.filter { $0.providerID != "copilot" } ?? []
-        entries.append(copilotEntry)
+        var entries = base?.entries.filter { $0.providerID != providerID } ?? []
+        entries.append(providerEntry)
 
         var enabled: Set<String> = Set(base?.enabledProviderIDs ?? [])
-        enabled.insert("copilot")
+        enabled.insert(providerID)
         let merged = iOSWidgetSnapshot(
             entries: entries,
             enabledProviderIDs: Array(enabled).sorted(),
@@ -169,5 +307,9 @@ final class UsageDashboardViewModel {
 
         iOSWidgetSnapshotStore.save(merged)
         self.snapshot = merged
+    }
+
+    private func mergeAndPersist(copilotSnapshot: iOSWidgetSnapshot) {
+        self.mergeAndPersist(providerSnapshot: copilotSnapshot, providerID: "copilot")
     }
 }

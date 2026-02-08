@@ -7,6 +7,7 @@ public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
         public let primary: RateWindow?
         public let secondary: RateWindow?
         public let tertiary: RateWindow?
+        public let planType: String?
         public let creditsRemaining: Double?
         public let codeReviewRemainingPercent: Double?
         public let tokenUsage: TokenUsageSummary?
@@ -18,6 +19,7 @@ public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
             primary: RateWindow?,
             secondary: RateWindow?,
             tertiary: RateWindow?,
+            planType: String? = nil,
             creditsRemaining: Double?,
             codeReviewRemainingPercent: Double?,
             tokenUsage: TokenUsageSummary?,
@@ -28,6 +30,7 @@ public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
             self.primary = primary
             self.secondary = secondary
             self.tertiary = tertiary
+            self.planType = planType
             self.creditsRemaining = creditsRemaining
             self.codeReviewRemainingPercent = codeReviewRemainingPercent
             self.tokenUsage = tokenUsage
@@ -40,6 +43,7 @@ public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
             case primary
             case secondary
             case tertiary
+            case planType = "plan_type"
             case creditsRemaining
             case codeReviewRemainingPercent
             case tokenUsage
@@ -102,6 +106,7 @@ public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
         public let updatedAt: Date
         public let sessionRemainingPercent: Double?
         public let weeklyRemainingPercent: Double?
+        public let planType: String?
         public let creditsRemaining: Double?
         public let codeReviewRemainingPercent: Double?
         public let todayCostUSD: Double?
@@ -134,6 +139,7 @@ public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
                 updatedAt: entry.updatedAt,
                 sessionRemainingPercent: entry.primary?.remainingPercent,
                 weeklyRemainingPercent: entry.secondary?.remainingPercent,
+                planType: entry.planType,
                 creditsRemaining: entry.creditsRemaining,
                 codeReviewRemainingPercent: entry.codeReviewRemainingPercent,
                 todayCostUSD: entry.tokenUsage?.sessionCostUSD,
@@ -276,6 +282,7 @@ public enum iOSWidgetPreviewData {
                         resetsAt: nil,
                         resetDescription: "Resets in 4d"),
                     tertiary: nil,
+                    planType: "plus",
                     creditsRemaining: 1243.4,
                     codeReviewRemainingPercent: 77,
                     tokenUsage: .init(

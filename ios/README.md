@@ -49,10 +49,16 @@ The expected JSON schema matches CodexBar's widget snapshot format (`provider`, 
   - authorize with GitHub in browser
   - complete token exchange in-app
   - fetch live Copilot usage and persist widget snapshot
+- Real auth flow for Codex via ChatGPT OAuth:
+  - start OpenAI Device Flow in-app
+  - open ChatGPT verification page and enter code
+  - complete OAuth code exchange in-app
+  - refresh OAuth tokens as needed
+  - fetch live Codex usage (`plus`, `pro`, etc.) and persist widget snapshot
 - If no snapshot exists, app can load sample data.
 - You can still paste/import snapshot JSON directly in the app.
 - Widget renders the selected provider from snapshot data.
 
 ## Known gap
 
-- Codex/Claude/Gemini native iOS auth flows are not implemented yet in this scaffold.
+- Other provider-native iOS auth flows (Claude/Gemini/etc.) are not implemented yet in this scaffold.
