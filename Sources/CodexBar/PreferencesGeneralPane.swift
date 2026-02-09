@@ -21,8 +21,6 @@ struct GeneralPane: View {
                         binding: self.$settings.launchAtLogin)
                 }
 
-                Divider()
-
                 SettingsSection(contentSpacing: 12) {
                     Text("Usage")
                         .font(.caption)
@@ -53,8 +51,6 @@ struct GeneralPane: View {
                         }
                     }
                 }
-
-                Divider()
 
                 SettingsSection(contentSpacing: 12) {
                     Text("Automation")
@@ -97,8 +93,6 @@ struct GeneralPane: View {
                             "available again.",
                         binding: self.$settings.sessionQuotaNotificationsEnabled)
                 }
-
-                Divider()
 
                 SettingsSection(contentSpacing: 12) {
                     HStack {

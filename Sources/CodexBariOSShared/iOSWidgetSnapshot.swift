@@ -242,29 +242,176 @@ public enum iOSWidgetSnapshotStore {
 }
 
 public enum iOSProviderCatalog {
-    public static func displayName(for providerID: String) -> String {
-        self.metadata[providerID] ?? providerID.capitalized
+    public enum AccentToken: String, Equatable, Sendable {
+        case ocean
+        case violet
+        case amber
+        case indigo
+        case mint
+        case rose
+        case cyan
+        case neutral
     }
 
-    private static let metadata: [String: String] = [
-        "codex": "Codex",
-        "claude": "Claude",
-        "gemini": "Gemini",
-        "antigravity": "Antigravity",
-        "cursor": "Cursor",
-        "opencode": "OpenCode",
-        "zai": "z.ai",
-        "factory": "Droid",
-        "copilot": "Copilot",
-        "minimax": "MiniMax",
-        "vertexai": "Vertex AI",
-        "kiro": "Kiro",
-        "augment": "Augment",
-        "jetbrains": "JetBrains",
-        "kimi": "Kimi",
-        "kimik2": "Kimi K2",
-        "amp": "Amp",
-        "synthetic": "Synthetic",
+    public static func displayName(for providerID: String) -> String {
+        self.metadata[providerID]?.displayName ?? self.fallbackDisplayName(for: providerID)
+    }
+
+    public static func iconSymbolName(for providerID: String) -> String {
+        self.metadata[providerID]?.iconSymbolName ?? "questionmark.circle.fill"
+    }
+
+    public static func brandIconResourceName(for providerID: String) -> String? {
+        self.metadata[providerID]?.iconResourceName
+    }
+
+    public static func accentToken(for providerID: String) -> AccentToken {
+        self.metadata[providerID]?.accentToken ?? .neutral
+    }
+
+    public static func pinnedProviderIDs(
+        connectableProviderIDs: [String],
+        configuredProviderIDs: Set<String>,
+        coreProviderIDs: [String] = ["codex", "claude", "gemini"],
+        cap: Int = 4) -> [String]
+    {
+        guard cap > 0 else {
+            return []
+        }
+
+        let connectableSet = Set(connectableProviderIDs)
+        var result: [String] = []
+
+        for providerID in connectableProviderIDs where configuredProviderIDs.contains(providerID) {
+            guard !result.contains(providerID) else { continue }
+            result.append(providerID)
+            if result.count == cap {
+                return result
+            }
+        }
+
+        for providerID in coreProviderIDs where connectableSet.contains(providerID) {
+            guard !result.contains(providerID) else { continue }
+            result.append(providerID)
+            if result.count == cap {
+                return result
+            }
+        }
+
+        for providerID in connectableProviderIDs {
+            guard !result.contains(providerID) else { continue }
+            result.append(providerID)
+            if result.count == cap {
+                break
+            }
+        }
+
+        return result
+    }
+
+    private static func fallbackDisplayName(for providerID: String) -> String {
+        providerID
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map(\.capitalized)
+            .joined(separator: " ")
+    }
+
+    private struct ProviderMetadata {
+        let displayName: String
+        let iconSymbolName: String
+        let iconResourceName: String
+        let accentToken: AccentToken
+    }
+
+    private static let metadata: [String: ProviderMetadata] = [
+        "codex": .init(
+            displayName: "Codex",
+            iconSymbolName: "terminal.fill",
+            iconResourceName: "ProviderIcon-codex",
+            accentToken: .ocean),
+        "claude": .init(
+            displayName: "Claude",
+            iconSymbolName: "quote.bubble.fill",
+            iconResourceName: "ProviderIcon-claude",
+            accentToken: .amber),
+        "gemini": .init(
+            displayName: "Gemini",
+            iconSymbolName: "sparkles",
+            iconResourceName: "ProviderIcon-gemini",
+            accentToken: .violet),
+        "antigravity": .init(
+            displayName: "Antigravity",
+            iconSymbolName: "atom",
+            iconResourceName: "ProviderIcon-antigravity",
+            accentToken: .mint),
+        "cursor": .init(
+            displayName: "Cursor",
+            iconSymbolName: "cursorarrow",
+            iconResourceName: "ProviderIcon-cursor",
+            accentToken: .indigo),
+        "opencode": .init(
+            displayName: "OpenCode",
+            iconSymbolName: "chevron.left.forwardslash.chevron.right",
+            iconResourceName: "ProviderIcon-opencode",
+            accentToken: .cyan),
+        "zai": .init(displayName: "z.ai", iconSymbolName: "globe", iconResourceName: "ProviderIcon-zai", accentToken: .violet),
+        "factory": .init(
+            displayName: "Droid",
+            iconSymbolName: "shippingbox.fill",
+            iconResourceName: "ProviderIcon-factory",
+            accentToken: .rose),
+        "copilot": .init(
+            displayName: "Copilot",
+            iconSymbolName: "paperplane.fill",
+            iconResourceName: "ProviderIcon-copilot",
+            accentToken: .indigo),
+        "minimax": .init(
+            displayName: "MiniMax",
+            iconSymbolName: "dial.medium.fill",
+            iconResourceName: "ProviderIcon-minimax",
+            accentToken: .rose),
+        "vertexai": .init(
+            displayName: "Vertex AI",
+            iconSymbolName: "triangle.fill",
+            iconResourceName: "ProviderIcon-vertexai",
+            accentToken: .mint),
+        "kiro": .init(
+            displayName: "Kiro",
+            iconSymbolName: "shield.fill",
+            iconResourceName: "ProviderIcon-kiro",
+            accentToken: .indigo),
+        "augment": .init(
+            displayName: "Augment",
+            iconSymbolName: "plus.rectangle.on.rectangle",
+            iconResourceName: "ProviderIcon-augment",
+            accentToken: .cyan),
+        "jetbrains": .init(
+            displayName: "JetBrains",
+            iconSymbolName: "keyboard.fill",
+            iconResourceName: "ProviderIcon-jetbrains",
+            accentToken: .amber),
+        "kimi": .init(
+            displayName: "Kimi",
+            iconSymbolName: "moon.stars.fill",
+            iconResourceName: "ProviderIcon-kimi",
+            accentToken: .violet),
+        "kimik2": .init(
+            displayName: "Kimi K2",
+            iconSymbolName: "moon.fill",
+            iconResourceName: "ProviderIcon-kimi",
+            accentToken: .indigo),
+        "amp": .init(
+            displayName: "Amp",
+            iconSymbolName: "bolt.fill",
+            iconResourceName: "ProviderIcon-amp",
+            accentToken: .amber),
+        "synthetic": .init(
+            displayName: "Synthetic",
+            iconSymbolName: "cpu.fill",
+            iconResourceName: "ProviderIcon-synthetic",
+            accentToken: .cyan),
     ]
 }
 
@@ -275,10 +422,14 @@ public enum iOSWidgetPreviewData {
                 .init(
                     providerID: "codex",
                     updatedAt: Date(),
-                    primary: .init(usedPercent: 32, windowMinutes: 300, resetsAt: nil, resetDescription: "Resets in 3h"),
+                    primary: .init(
+                        usedPercent: 32,
+                        windowMinutes: 300,
+                        resetsAt: nil,
+                        resetDescription: "Resets in 3h"),
                     secondary: .init(
                         usedPercent: 58,
-                        windowMinutes: 10_080,
+                        windowMinutes: 10080,
                         resetsAt: nil,
                         resetDescription: "Resets in 4d"),
                     tertiary: nil,
@@ -292,9 +443,9 @@ public enum iOSWidgetPreviewData {
                         last30DaysTokens: 12_400_000),
                     dailyUsage: [
                         .init(dayKey: "2026-02-02", totalTokens: 120_000, costUSD: 15.2),
-                        .init(dayKey: "2026-02-03", totalTokens: 80_000, costUSD: 10.1),
+                        .init(dayKey: "2026-02-03", totalTokens: 80000, costUSD: 10.1),
                         .init(dayKey: "2026-02-04", totalTokens: 140_000, costUSD: 17.9),
-                        .init(dayKey: "2026-02-05", totalTokens: 90_000, costUSD: 11.4),
+                        .init(dayKey: "2026-02-05", totalTokens: 90000, costUSD: 11.4),
                         .init(dayKey: "2026-02-06", totalTokens: 160_000, costUSD: 19.8),
                     ]),
             ],

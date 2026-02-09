@@ -162,6 +162,9 @@ private struct ProviderDetailHeaderView: View {
                 model: self.model,
                 labelWidth: self.labelWidth)
         }
+        .liquidGlassCard(
+            cornerRadius: 14,
+            contentPadding: EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
     }
 
     private var detailSubtitle: String {

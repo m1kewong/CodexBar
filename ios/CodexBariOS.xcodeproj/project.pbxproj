@@ -11,6 +11,8 @@
 		08AB0474CE9314756D95C2D8 /* CopilotTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B914C62FC3288C34B0B7B8AB /* CopilotTokenStore.swift */; };
 		09B0A5FE199F2D4DF740DED5 /* CodexCredentialsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 559197022032A7794F3F262E /* CodexCredentialsStore.swift */; };
 		1A482D2AD0E9AD0EF1A0C2B7 /* CodexBariOSWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 041B625F0BB1E60AE4D5686D /* CodexBariOSWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA11AA11AA11AA11AA11AA11 /* ProviderIcons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA11AA11AA11AA11AA11AA13 /* ProviderIcons.xcassets */; };
+		AA11AA11AA11AA11AA11AA12 /* ProviderIcons.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA11AA11AA11AA11AA11AA13 /* ProviderIcons.xcassets */; };
 		1EBC3B03A11A791B2CC0A63E /* CodexBariOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757C29A86CC951F0AFFCF216 /* CodexBariOSApp.swift */; };
 		47DD1500B8D264F3DC056A90 /* UsageDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A026E32E67B4A36611E489 /* UsageDashboardView.swift */; };
 		7F7CBDDBD500EFCBC5787CF4 /* UsageDashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D1AB03905379A6674460FB /* UsageDashboardViewModel.swift */; };
@@ -55,6 +57,7 @@
 		757C29A86CC951F0AFFCF216 /* CodexBariOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexBariOSApp.swift; sourceTree = "<group>"; };
 		75F11CFD8A25DC91115B7779 /* codexbar_fork */ = {isa = PBXFileReference; lastKnownFileType = folder; name = codexbar_fork; path = ..; sourceTree = SOURCE_ROOT; };
 		7E5C6C45AFC714DDB09CB98F /* CodexBariOSWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexBariOSWidgetBundle.swift; sourceTree = "<group>"; };
+		AA11AA11AA11AA11AA11AA13 /* ProviderIcons.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = ProviderIcons.xcassets; sourceTree = "<group>"; };
 		B914C62FC3288C34B0B7B8AB /* CopilotTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotTokenStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -125,6 +128,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		AA11AA11AA11AA11AA11AA14 /* SharedAssets */ = {
+			isa = PBXGroup;
+			children = (
+				AA11AA11AA11AA11AA11AA13 /* ProviderIcons.xcassets */,
+			);
+			path = SharedAssets;
+			sourceTree = "<group>";
+		};
 		C7223BCF90A85F8F5DDB2448 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
@@ -138,6 +149,7 @@
 			children = (
 				2B07B442FB3544CA39C55303 /* CodexBariOSApp */,
 				8C7A83E10F7BFA96FA67119A /* CodexBariOSWidget */,
+				AA11AA11AA11AA11AA11AA14 /* SharedAssets */,
 				C7223BCF90A85F8F5DDB2448 /* Packages */,
 				8E2ED50C2F99D983878D8CAF /* Products */,
 			);
@@ -152,6 +164,7 @@
 			buildPhases = (
 				747F919819EE28C18DC7A474 /* Sources */,
 				A2D1E29AC1A0E48299BBCCB7 /* Frameworks */,
+				AA11AA11AA11AA11AA11AA15 /* Resources */,
 				8E3AD4E3B84A3E9AC0143C3D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -173,6 +186,7 @@
 			buildPhases = (
 				BD7315B08C1A6B43D03FE6F6 /* Sources */,
 				82C1AA04927B0CF7C634456D /* Frameworks */,
+				AA11AA11AA11AA11AA11AA16 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -217,6 +231,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA11AA11AA11AA11AA11AA15 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA11AA11AA11AA11AA11AA11 /* ProviderIcons.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA11AA11AA11AA11AA11AA16 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA11AA11AA11AA11AA11AA12 /* ProviderIcons.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		747F919819EE28C18DC7A474 /* Sources */ = {

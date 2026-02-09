@@ -1,6 +1,7 @@
 import AppIntents
 import CodexBariOSShared
 import SwiftUI
+import UIKit
 import WidgetKit
 
 enum ProviderChoice: String, AppEnum {
@@ -114,70 +115,128 @@ struct CodexBariOSUsageWidget: Widget {
 
 private struct CodexBariOSUsageWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.colorScheme) private var colorScheme
     let entry: CodexBariOSWidgetEntry
 
     private var summary: iOSWidgetSnapshot.ProviderSummary? {
         self.entry.snapshot.providerSummaries.first { $0.providerID == self.entry.providerID }
     }
 
+    private var palette: WidgetPalette {
+        WidgetPalette(providerID: self.entry.providerID, colorScheme: self.colorScheme)
+    }
+
     var body: some View {
         ZStack {
-            Color.black.opacity(0.02)
+            self.palette.background
             if let summary {
-                self.content(summary: summary)
+                self.content(summary: summary, palette: self.palette)
             } else {
-                self.emptyState
+                self.emptyState(palette: self.palette)
             }
         }
-        .containerBackground(.fill.tertiary, for: .widget)
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(self.palette.border, lineWidth: 1)
+        }
+        .containerBackground(.clear, for: .widget)
     }
 
     @ViewBuilder
-    private func content(summary: iOSWidgetSnapshot.ProviderSummary) -> some View {
+    private func content(summary: iOSWidgetSnapshot.ProviderSummary, palette: WidgetPalette) -> some View {
         switch self.family {
         case .systemSmall:
-            VStack(alignment: .leading, spacing: 8) {
-                self.header(summary: summary)
-                UsageBarRow(title: "Session", percentLeft: summary.sessionRemainingPercent)
-                UsageBarRow(title: "Weekly", percentLeft: summary.weeklyRemainingPercent)
+            VStack(alignment: .leading, spacing: 6) {
+                self.header(summary: summary, palette: palette)
+                UsageBarRow(
+                    title: "Session",
+                    percentLeft: summary.sessionRemainingPercent,
+                    tint: palette.primaryTint,
+                    trackTint: palette.trackTint,
+                    labelColor: palette.primaryText,
+                    valueColor: palette.secondaryText)
+                UsageBarRow(
+                    title: "Weekly",
+                    percentLeft: summary.weeklyRemainingPercent,
+                    tint: palette.secondaryTint,
+                    trackTint: palette.trackTint,
+                    labelColor: palette.primaryText,
+                    valueColor: palette.secondaryText)
                 if let credits = summary.creditsRemaining {
-                    ValueLine(title: "Credits", value: Self.decimal(credits))
+                    ValueLine(
+                        title: "Credits",
+                        value: Self.decimal(credits),
+                        labelColor: palette.secondaryText,
+                        valueColor: palette.primaryText)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
         default:
-            VStack(alignment: .leading, spacing: 10) {
-                self.header(summary: summary)
-                UsageBarRow(title: "Session", percentLeft: summary.sessionRemainingPercent)
-                UsageBarRow(title: "Weekly", percentLeft: summary.weeklyRemainingPercent)
-                ValueLine(title: "Today", value: summary.todayCostUSD.map(Self.usd) ?? "—")
-                ValueLine(title: "30d", value: summary.last30DaysCostUSD.map(Self.usd) ?? "—")
+            VStack(alignment: .leading, spacing: 6) {
+                self.header(summary: summary, palette: palette)
+                UsageBarRow(
+                    title: "Session",
+                    percentLeft: summary.sessionRemainingPercent,
+                    tint: palette.primaryTint,
+                    trackTint: palette.trackTint,
+                    labelColor: palette.primaryText,
+                    valueColor: palette.secondaryText)
+                UsageBarRow(
+                    title: "Weekly",
+                    percentLeft: summary.weeklyRemainingPercent,
+                    tint: palette.secondaryTint,
+                    trackTint: palette.trackTint,
+                    labelColor: palette.primaryText,
+                    valueColor: palette.secondaryText)
+                ValueLine(
+                    title: "Today",
+                    value: summary.todayCostUSD.map(Self.usd) ?? "—",
+                    labelColor: palette.secondaryText,
+                    valueColor: palette.primaryText)
+                ValueLine(
+                    title: "30d",
+                    value: summary.last30DaysCostUSD.map(Self.usd) ?? "—",
+                    labelColor: palette.secondaryText,
+                    valueColor: palette.primaryText)
                 if let credits = summary.creditsRemaining {
-                    ValueLine(title: "Credits", value: Self.decimal(credits))
+                    ValueLine(
+                        title: "Credits",
+                        value: Self.decimal(credits),
+                        labelColor: palette.secondaryText,
+                        valueColor: palette.primaryText)
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
         }
     }
 
-    private func header(summary: iOSWidgetSnapshot.ProviderSummary) -> some View {
+    private func header(summary: iOSWidgetSnapshot.ProviderSummary, palette: WidgetPalette) -> some View {
         HStack {
-            Text(summary.displayName)
-                .font(.body.weight(.semibold))
+            HStack(spacing: 6) {
+                WidgetProviderGlyph(providerID: summary.providerID, size: 10, tint: palette.primaryTint)
+                Text(summary.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(palette.primaryText)
+            }
             Spacer()
             Text(Self.relative(summary.updatedAt))
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
         }
     }
 
-    private var emptyState: some View {
+    private func emptyState(palette: WidgetPalette) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Open CodexBar")
                 .font(.body.weight(.semibold))
+                .foregroundStyle(palette.primaryText)
             Text("Import a widget snapshot in the app first.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondaryText)
         }
         .padding(12)
     }
@@ -209,40 +268,155 @@ private struct CodexBariOSUsageWidgetView: View {
 private struct UsageBarRow: View {
     let title: String
     let percentLeft: Double?
+    let tint: Color
+    let trackTint: Color
+    let labelColor: Color
+    let valueColor: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(self.title)
-                    .font(.caption)
+                    .font(.caption2)
+                    .foregroundStyle(self.labelColor)
                 Spacer()
                 Text(self.percentLeft.map { String(format: "%.0f%%", $0) } ?? "—")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(self.valueColor)
             }
             GeometryReader { proxy in
                 let ratio = max(0, min(100, self.percentLeft ?? 0)) / 100
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.12))
-                    Capsule().fill(Color.accentColor).frame(width: proxy.size.width * ratio)
+                    Capsule().fill(self.trackTint)
+                    Capsule().fill(self.tint).frame(width: proxy.size.width * ratio)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 5)
         }
+    }
+}
+
+private struct WidgetProviderGlyph: View {
+    let providerID: String
+    let size: CGFloat
+    let tint: Color
+
+    var body: some View {
+        self.iconImage
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: self.size, height: self.size)
+            .foregroundStyle(self.tint)
+            .frame(width: self.size + 6, height: self.size + 6)
+            .background(Circle().fill(self.tint.opacity(0.2)))
+    }
+
+    private var iconImage: Image {
+        if let iconName = iOSProviderCatalog.brandIconResourceName(for: self.providerID),
+           UIImage(named: iconName) != nil
+        {
+            return Image(iconName)
+        }
+        return Image(systemName: iOSProviderCatalog.iconSymbolName(for: self.providerID))
     }
 }
 
 private struct ValueLine: View {
     let title: String
     let value: String
+    let labelColor: Color
+    let valueColor: Color
 
     var body: some View {
         HStack(spacing: 6) {
             Text(self.title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption2)
+                .foregroundStyle(self.labelColor)
+                .lineLimit(1)
             Text(self.value)
-                .font(.caption)
+                .font(.caption2)
+                .foregroundStyle(self.valueColor)
+                .lineLimit(1)
         }
+    }
+}
+
+private struct WidgetPalette {
+    let providerID: String
+    let colorScheme: ColorScheme
+
+    var primaryTint: Color {
+        Self.accent(for: self.providerID, colorScheme: self.colorScheme)
+    }
+
+    var secondaryTint: Color {
+        self.primaryTint.opacity(self.colorScheme == .dark ? 0.72 : 0.78)
+    }
+
+    var primaryText: Color {
+        self.colorScheme == .dark ? Color.white.opacity(0.92) : Color.black.opacity(0.88)
+    }
+
+    var secondaryText: Color {
+        self.colorScheme == .dark ? Color.white.opacity(0.7) : Color.black.opacity(0.54)
+    }
+
+    var trackTint: Color {
+        self.colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.1)
+    }
+
+    var border: Color {
+        self.colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08)
+    }
+
+    var background: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(self.surfaceGradient)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(self.primaryTint.opacity(self.colorScheme == .dark ? 0.17 : 0.12))
+        }
+    }
+
+    private var surfaceGradient: LinearGradient {
+        LinearGradient(
+            colors: self.colorScheme == .dark
+                ? [Color(red: 0.1, green: 0.12, blue: 0.17), Color(red: 0.07, green: 0.09, blue: 0.13)]
+                : [Color.white.opacity(0.94), Color.white.opacity(0.82)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing)
+    }
+
+    private static func accent(for providerID: String, colorScheme: ColorScheme) -> Color {
+        let light: Color
+        let dark: Color
+        switch iOSProviderCatalog.accentToken(for: providerID) {
+        case .ocean:
+            light = Color(red: 0.14, green: 0.48, blue: 0.95)
+            dark = Color(red: 0.4, green: 0.67, blue: 1.0)
+        case .violet:
+            light = Color(red: 0.52, green: 0.37, blue: 0.94)
+            dark = Color(red: 0.69, green: 0.57, blue: 1.0)
+        case .amber:
+            light = Color(red: 0.88, green: 0.56, blue: 0.2)
+            dark = Color(red: 0.95, green: 0.72, blue: 0.42)
+        case .indigo:
+            light = Color(red: 0.34, green: 0.43, blue: 0.91)
+            dark = Color(red: 0.56, green: 0.67, blue: 1.0)
+        case .mint:
+            light = Color(red: 0.15, green: 0.68, blue: 0.6)
+            dark = Color(red: 0.38, green: 0.83, blue: 0.75)
+        case .rose:
+            light = Color(red: 0.84, green: 0.37, blue: 0.54)
+            dark = Color(red: 0.93, green: 0.58, blue: 0.73)
+        case .cyan:
+            light = Color(red: 0.11, green: 0.59, blue: 0.8)
+            dark = Color(red: 0.35, green: 0.79, blue: 0.93)
+        case .neutral:
+            light = Color(red: 0.36, green: 0.48, blue: 0.67)
+            dark = Color(red: 0.62, green: 0.71, blue: 0.85)
+        }
+        return colorScheme == .dark ? dark : light
     }
 }

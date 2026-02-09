@@ -123,6 +123,39 @@ final class UsageDashboardViewModel {
         self.providerRefreshingIDs.contains(providerID)
     }
 
+    func hasCredentials(for providerID: String) -> Bool {
+        switch providerID {
+        case "codex":
+            self.hasCodexCredentials
+        case "copilot":
+            self.hasCopilotToken
+        default:
+            self.hasProviderToken(providerID)
+        }
+    }
+
+    func isRefreshing(providerID: String) -> Bool {
+        switch providerID {
+        case "codex":
+            self.isAuthenticatingCodex || self.isRefreshingCodexUsage
+        case "copilot":
+            self.isAuthenticatingCopilot || self.isRefreshingCopilotUsage
+        default:
+            self.isProviderRefreshing(providerID)
+        }
+    }
+
+    func refreshProvider(providerID: String) async {
+        switch providerID {
+        case "codex":
+            await self.refreshCodexUsage()
+        case "copilot":
+            await self.refreshCopilotUsage()
+        default:
+            await self.refreshProviderUsage(providerID)
+        }
+    }
+
     func saveProviderToken(_ providerID: String) {
         guard Self.apiTokenProviderIDs.contains(providerID) else { return }
         let token = self.providerTokenDrafts[providerID]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -494,6 +527,6 @@ private struct InvalidCredentialFormatError: LocalizedError {
     let expectedFormat: String
 
     var errorDescription: String? {
-        "Invalid \(providerID) credential format. Use \(expectedFormat)."
+        "Invalid \(self.providerID) credential format. Use \(self.expectedFormat)."
     }
 }

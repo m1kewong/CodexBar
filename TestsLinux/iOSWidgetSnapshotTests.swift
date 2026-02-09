@@ -58,4 +58,50 @@ struct iOSWidgetSnapshotTests {
         let selected = snapshot.selectedProviderID(preferred: "codex")
         #expect(selected == "claude")
     }
+
+    @Test
+    func providerCatalogProvidesIconSymbolsWithFallback() {
+        #expect(iOSProviderCatalog.iconSymbolName(for: "codex") == "terminal.fill")
+        #expect(iOSProviderCatalog.iconSymbolName(for: "opencode") == "chevron.left.forwardslash.chevron.right")
+        #expect(iOSProviderCatalog.iconSymbolName(for: "unknown-provider") == "questionmark.circle.fill")
+    }
+
+    @Test
+    func providerCatalogProvidesBrandIconResourceNames() {
+        #expect(iOSProviderCatalog.brandIconResourceName(for: "codex") == "ProviderIcon-codex")
+        #expect(iOSProviderCatalog.brandIconResourceName(for: "claude") == "ProviderIcon-claude")
+        #expect(iOSProviderCatalog.brandIconResourceName(for: "kimik2") == "ProviderIcon-kimi")
+        #expect(iOSProviderCatalog.brandIconResourceName(for: "unknown-provider") == nil)
+    }
+
+    @Test
+    func providerCatalogProvidesAccentTokensWithFallback() {
+        #expect(iOSProviderCatalog.accentToken(for: "codex") == .ocean)
+        #expect(iOSProviderCatalog.accentToken(for: "gemini") == .violet)
+        #expect(iOSProviderCatalog.accentToken(for: "unknown-provider") == .neutral)
+    }
+
+    @Test
+    func pinnedProviderIDsPrioritizeConfiguredThenCoreThenDefaults() {
+        let connectable = ["codex", "copilot", "claude", "gemini", "cursor", "zai"]
+        let configured: Set<String> = ["cursor", "copilot"]
+        let pinned = iOSProviderCatalog.pinnedProviderIDs(
+            connectableProviderIDs: connectable,
+            configuredProviderIDs: configured,
+            cap: 4)
+
+        #expect(pinned == ["copilot", "cursor", "codex", "claude"])
+    }
+
+    @Test
+    func pinnedProviderIDsDeduplicatesAndRespectsCap() {
+        let connectable = ["codex", "claude", "gemini"]
+        let configured: Set<String> = ["codex", "gemini"]
+        let pinned = iOSProviderCatalog.pinnedProviderIDs(
+            connectableProviderIDs: connectable,
+            configuredProviderIDs: configured,
+            cap: 2)
+
+        #expect(pinned == ["codex", "gemini"])
+    }
 }
