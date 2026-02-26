@@ -104,4 +104,35 @@ struct iOSWidgetSnapshotTests {
 
         #expect(pinned == ["codex", "gemini"])
     }
+
+    @Test
+    func refreshProviderIDsPrioritizeSelectedThenCoreThenConfiguredOrder() {
+        let configured = ["zai", "claude", "copilot", "cursor"]
+        let prioritized = iOSProviderCatalog.prioritizedRefreshProviderIDs(
+            configuredProviderIDs: configured,
+            selectedProviderID: "cursor",
+            cap: 3)
+
+        #expect(prioritized == ["cursor", "copilot", "claude"])
+    }
+
+    @Test
+    func refreshProviderIDsIgnoreUnknownSelectionAndDeduplicate() {
+        let configured = ["copilot", "copilot", "gemini", "zai"]
+        let prioritized = iOSProviderCatalog.prioritizedRefreshProviderIDs(
+            configuredProviderIDs: configured,
+            selectedProviderID: "codex",
+            cap: 0)
+
+        #expect(prioritized == ["copilot", "gemini", "zai"])
+    }
+
+    @Test
+    func sharedContainerStatusIncludesKnownCandidateGroups() {
+        let status = iOSWidgetSnapshotStore.sharedContainerStatus(bundleID: "com.steipete.codexbar.ios")
+        #expect(iOSWidgetSnapshotStore.appGroupID == "group.com.steipete.codexbar")
+        #expect(status.candidateGroupIDs.contains("group.com.steipete.codexbar"))
+        #expect(status.candidateGroupIDs.contains("group.com.steipete.codexbar.debug"))
+        #expect(status.candidateGroupIDs.contains("group.com.steipete.codexbar.ios"))
+    }
 }

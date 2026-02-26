@@ -173,6 +173,49 @@ public enum iOSCodexOAuthFetchError: LocalizedError, Sendable {
     }
 }
 
+public enum iOSCodexDeviceAuthError: LocalizedError, Sendable {
+    case invalidResponse
+    case serverError(statusCode: Int, message: String?)
+    case networkError(Error)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "Invalid response from Codex auth endpoint."
+        case let .serverError(statusCode, message):
+            let suffix = message?.nilIfEmpty.map { ": \($0)" } ?? "."
+            switch statusCode {
+            case 401, 403:
+                return "Codex device sign-in was rejected (HTTP \(statusCode))\(suffix) Check VPN/ad blocker/Private Relay and try again."
+            case 429:
+                return "Codex device sign-in is rate-limited (HTTP 429). Please wait a minute and retry."
+            default:
+                return "Codex device sign-in failed (HTTP \(statusCode))\(suffix)"
+            }
+        case let .networkError(error):
+            if let urlError = error as? URLError {
+                switch urlError.code {
+                case .notConnectedToInternet:
+                    return "Codex sign-in failed: no internet connection on this device."
+                case .timedOut:
+                    return "Codex sign-in timed out. Check network quality and retry."
+                case .networkConnectionLost:
+                    return "Codex sign-in failed: network connection was interrupted."
+                case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                    return "Codex sign-in failed: auth host could not be reached."
+                case .secureConnectionFailed, .appTransportSecurityRequiresSecureConnection:
+                    return "Codex sign-in failed: secure connection to auth server was blocked."
+                case .badServerResponse:
+                    return "Codex sign-in failed: server response was rejected. Check VPN/ad blocker/Private Relay and try again."
+                default:
+                    break
+                }
+            }
+            return "Network error during Codex sign-in: \(error.localizedDescription)"
+        }
+    }
+}
+
 public enum iOSCodexJWT {
     public struct AuthClaims: Equatable, Sendable {
         public let accountID: String?
@@ -284,23 +327,30 @@ public struct iOSCodexDeviceAuthFlow: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        Self.applyDefaultHeaders(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: ["client_id": clientID])
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw iOSCodexDeviceAuthError.invalidResponse
+            }
 
-        guard http.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
+            guard http.statusCode == 200 else {
+                throw Self.makeServerError(statusCode: http.statusCode, data: data)
+            }
 
-        let raw = try JSONDecoder().decode(iOSCodexOAuthDeviceCode.self, from: data)
-        return iOSCodexOAuthDeviceCode(
-            deviceAuthID: raw.deviceAuthID,
-            userCode: raw.userCode,
-            intervalSeconds: max(0, raw.intervalSeconds),
-            verificationURL: "\(base)/codex/device")
+            let raw = try JSONDecoder().decode(iOSCodexOAuthDeviceCode.self, from: data)
+            return iOSCodexOAuthDeviceCode(
+                deviceAuthID: raw.deviceAuthID,
+                userCode: raw.userCode,
+                intervalSeconds: max(0, raw.intervalSeconds),
+                verificationURL: "\(base)/codex/device")
+        } catch let error as iOSCodexDeviceAuthError {
+            throw error
+        } catch {
+            throw iOSCodexDeviceAuthError.networkError(error)
+        }
     }
 
     public func completeDeviceCodeLogin(
@@ -330,6 +380,7 @@ public struct iOSCodexDeviceAuthFlow: Sendable {
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        Self.applyDefaultHeaders(to: &request)
 
         let redirectURI = "\(base)/deviceauth/callback"
         let body: [String: String] = [
@@ -341,27 +392,36 @@ public struct iOSCodexDeviceAuthFlow: Sendable {
         ]
         request.httpBody = Self.formURLEncodedBody(body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw URLError(.badServerResponse)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw iOSCodexDeviceAuthError.invalidResponse
+            }
+            guard http.statusCode == 200 else {
+                throw Self.makeServerError(statusCode: http.statusCode, data: data)
+            }
+
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw iOSCodexDeviceAuthError.invalidResponse
+            }
+            let accessToken = (json["access_token"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let refreshToken = (json["refresh_token"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let idToken = (json["id_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !accessToken.isEmpty else { throw iOSCodexDeviceAuthError.invalidResponse }
+
+            let claims = iOSCodexJWT.extractAuthClaims(from: idToken)
+            return iOSCodexOAuthCredentials(
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                idToken: idToken,
+                accountID: claims.accountID,
+                lastRefresh: Date())
+        } catch let error as iOSCodexDeviceAuthError {
+            throw error
+        } catch {
+            throw iOSCodexDeviceAuthError.networkError(error)
         }
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw URLError(.cannotParseResponse)
-        }
-        let accessToken = (json["access_token"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let refreshToken = (json["refresh_token"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let idToken = (json["id_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !accessToken.isEmpty else { throw URLError(.cannotParseResponse) }
-
-        let claims = iOSCodexJWT.extractAuthClaims(from: idToken)
-        return iOSCodexOAuthCredentials(
-            accessToken: accessToken,
-            refreshToken: refreshToken,
-            idToken: idToken,
-            accountID: claims.accountID,
-            lastRefresh: Date())
     }
 
     private func pollForDeviceGrant(
@@ -378,6 +438,7 @@ public struct iOSCodexDeviceAuthFlow: Sendable {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            Self.applyDefaultHeaders(to: &request)
             request.httpBody = try JSONSerialization.data(withJSONObject: [
                 "device_auth_id": code.deviceAuthID,
                 "user_code": code.userCode,
@@ -388,7 +449,7 @@ public struct iOSCodexDeviceAuthFlow: Sendable {
                 throw URLError(.badServerResponse)
             }
 
-            if (200 ... 299).contains(http.statusCode) {
+            if (200...299).contains(http.statusCode) {
                 return try JSONDecoder().decode(iOSCodexOAuthDeviceGrant.self, from: data)
             }
 
@@ -398,10 +459,53 @@ public struct iOSCodexDeviceAuthFlow: Sendable {
                 continue
             }
 
-            throw URLError(.userAuthenticationRequired)
+            throw Self.makeServerError(statusCode: http.statusCode, data: data)
         }
 
         throw URLError(.timedOut)
+    }
+
+    private static func applyDefaultHeaders(to request: inout URLRequest) {
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("CodexBar iOS", forHTTPHeaderField: "User-Agent")
+    }
+
+    private static func makeServerError(statusCode: Int, data: Data?) -> iOSCodexDeviceAuthError {
+        .serverError(statusCode: statusCode, message: self.extractErrorMessage(from: data))
+    }
+
+    private static func extractErrorMessage(from data: Data?) -> String? {
+        guard let data, !data.isEmpty else { return nil }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let message = json["error_description"] as? String {
+                return message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            }
+            if let message = json["message"] as? String {
+                return message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            }
+            if let error = json["error"] as? String {
+                return error.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            }
+            if let error = json["error"] as? [String: Any] {
+                if let code = error["code"] as? String, let message = error["message"] as? String {
+                    return "\(code): \(message)".trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                }
+                if let message = error["message"] as? String {
+                    return message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                }
+                if let code = error["code"] as? String {
+                    return code.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                }
+            }
+            if let reason = json["reason"] as? String {
+                return reason.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            }
+        }
+
+        let plain = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let plain, !plain.isEmpty else { return nil }
+        return String(plain.prefix(180))
     }
 
     private static func formURLEncodedBody(_ parameters: [String: String]) -> Data {
@@ -434,15 +538,15 @@ public enum iOSCodexTokenRefresher {
         public var errorDescription: String? {
             switch self {
             case .expired:
-                return "Codex refresh token expired. Please sign in again."
+                "Codex refresh token expired. Please sign in again."
             case .revoked:
-                return "Codex refresh token was revoked. Please sign in again."
+                "Codex refresh token was revoked. Please sign in again."
             case .reused:
-                return "Codex refresh token was already used. Please sign in again."
+                "Codex refresh token was already used. Please sign in again."
             case let .networkError(error):
-                return "Network error during token refresh: \(error.localizedDescription)"
+                "Network error during token refresh: \(error.localizedDescription)"
             case let .invalidResponse(message):
-                return "Invalid refresh response: \(message)"
+                "Invalid refresh response: \(message)"
             }
         }
     }
@@ -547,7 +651,7 @@ public enum iOSCodexUsageFetcher {
             }
 
             switch http.statusCode {
-            case 200 ... 299:
+            case 200...299:
                 do {
                     return try JSONDecoder().decode(iOSCodexUsageResponse.self, from: data)
                 } catch {
@@ -579,8 +683,8 @@ public enum iOSCodexUsageFetcher {
         while trimmed.hasSuffix("/") {
             trimmed.removeLast()
         }
-        if (trimmed.hasPrefix("https://chatgpt.com") || trimmed.hasPrefix("https://chat.openai.com"))
-            && !trimmed.contains("/backend-api")
+        if trimmed.hasPrefix("https://chatgpt.com") || trimmed.hasPrefix("https://chat.openai.com"),
+           !trimmed.contains("/backend-api")
         {
             trimmed += "/backend-api"
         }
@@ -625,12 +729,12 @@ public enum iOSCodexUsageMapper {
     }
 }
 
-private extension String {
-    var nilIfEmpty: String? {
+extension String {
+    fileprivate var nilIfEmpty: String? {
         self.isEmpty ? nil : self
     }
 
-    func trimmingTrailingSlash() -> String {
+    fileprivate func trimmingTrailingSlash() -> String {
         var value = self
         while value.hasSuffix("/") {
             value.removeLast()

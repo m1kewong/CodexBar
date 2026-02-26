@@ -970,7 +970,6 @@ private struct ProviderGlyph: View {
 
     var body: some View {
         self.iconImage
-            .renderingMode(.template)
             .resizable()
             .scaledToFit()
             .frame(width: self.size, height: self.size)
@@ -982,19 +981,23 @@ private struct ProviderGlyph: View {
     }
 
     private var iconImage: Image {
-        if let iconName = iOSProviderCatalog.brandIconResourceName(for: self.providerID),
-           Self.assetExists(named: iconName)
+        if let brandedIcon = Self.brandedTemplateIcon(for: self.providerID)
         {
-            return Image(iconName)
+            return Image(uiImage: brandedIcon)
         }
         return Image(systemName: iOSProviderCatalog.iconSymbolName(for: self.providerID))
     }
 
-    private static func assetExists(named name: String) -> Bool {
+    private static func brandedTemplateIcon(for providerID: String) -> UIImage? {
         #if canImport(UIKit)
-        return UIImage(named: name) != nil
+        guard let iconName = iOSProviderCatalog.brandIconResourceName(for: providerID),
+              let image = UIImage(named: iconName)
+        else {
+            return nil
+        }
+        return image.withRenderingMode(.alwaysTemplate)
         #else
-        return false
+        return nil
         #endif
     }
 }

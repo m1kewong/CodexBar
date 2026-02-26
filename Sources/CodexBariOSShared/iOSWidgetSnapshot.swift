@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Security)
+import Security
+#endif
 
 public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
     public struct ProviderEntry: Codable, Equatable, Sendable {
@@ -186,45 +189,129 @@ public struct iOSWidgetSnapshot: Codable, Equatable, Sendable {
 }
 
 public enum iOSWidgetSnapshotStore {
+    public struct SharedContainerStatus: Equatable, Sendable {
+        public let candidateGroupIDs: [String]
+        public let writableGroupID: String?
+        public let runtimeEntitledGroupIDs: [String]
+
+        public init(
+            candidateGroupIDs: [String],
+            writableGroupID: String?,
+            runtimeEntitledGroupIDs: [String] = [])
+        {
+            self.candidateGroupIDs = candidateGroupIDs
+            self.writableGroupID = writableGroupID
+            self.runtimeEntitledGroupIDs = runtimeEntitledGroupIDs
+        }
+    }
+
     public static let appGroupID = "group.com.steipete.codexbar"
     private static let filename = "widget-snapshot.json"
     private static let selectedProviderKey = "widgetSelectedProvider"
 
     public static func load(bundleID: String? = Bundle.main.bundleIdentifier) -> iOSWidgetSnapshot? {
-        guard let url = self.snapshotURL(bundleID: bundleID) else { return nil }
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? iOSWidgetSnapshot.decode(from: data)
+        let urls = self.snapshotURLs(bundleID: bundleID)
+        guard !urls.isEmpty else { return nil }
+
+        for (index, url) in urls.enumerated() {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let snapshot = try? iOSWidgetSnapshot.decode(from: data) else { continue }
+            if index > 0 {
+                self.save(snapshot, bundleID: bundleID)
+            }
+            return snapshot
+        }
+
+        return nil
     }
 
-    public static func save(_ snapshot: iOSWidgetSnapshot, bundleID: String? = Bundle.main.bundleIdentifier) {
-        guard let url = self.snapshotURL(bundleID: bundleID) else { return }
-        guard let data = try? snapshot.encode() else { return }
-        try? data.write(to: url, options: [.atomic])
+    @discardableResult
+    public static func save(_ snapshot: iOSWidgetSnapshot, bundleID: String? = Bundle.main.bundleIdentifier) -> Bool {
+        let data: Data
+        if let encoded = try? snapshot.encode() {
+            data = encoded
+        } else {
+            let sanitized = snapshot.sanitizedForPersistence()
+            guard let encoded = try? sanitized.encode() else { return false }
+            data = encoded
+        }
+
+        if let url = self.writableSnapshotURL(bundleID: bundleID)?.0 {
+            try? data.write(to: url, options: [.atomic])
+            return true
+        }
+
+        // App-local fallback keeps iOS app usage visible even when App Group sharing is unavailable.
+        try? data.write(to: self.legacySnapshotURL(), options: [.atomic])
+        return false
+    }
+
+    public static func sharedContainerStatus(bundleID: String? = Bundle.main.bundleIdentifier) -> SharedContainerStatus {
+        let candidateGroupIDs = self.groupIDs(for: bundleID)
+        let writableGroupID = self.writableSnapshotURL(bundleID: bundleID)?.1
+        let runtimeEntitledGroupIDs = self.runtimeEntitledGroupIDs()
+        return SharedContainerStatus(
+            candidateGroupIDs: candidateGroupIDs,
+            writableGroupID: writableGroupID,
+            runtimeEntitledGroupIDs: runtimeEntitledGroupIDs)
     }
 
     public static func loadSelectedProviderID(bundleID: String? = Bundle.main.bundleIdentifier) -> String? {
-        guard let defaults = self.sharedDefaults(bundleID: bundleID) else { return nil }
-        return defaults.string(forKey: self.selectedProviderKey)
+        if let defaults = self.sharedDefaults(bundleID: bundleID),
+           let providerID = defaults.string(forKey: self.selectedProviderKey)
+        {
+            return providerID
+        }
+        return UserDefaults.standard.string(forKey: self.selectedProviderKey)
     }
 
     public static func saveSelectedProviderID(_ providerID: String, bundleID: String? = Bundle.main.bundleIdentifier) {
-        guard let defaults = self.sharedDefaults(bundleID: bundleID) else { return }
-        defaults.set(providerID, forKey: self.selectedProviderKey)
+        if let defaults = self.sharedDefaults(bundleID: bundleID) {
+            defaults.set(providerID, forKey: self.selectedProviderKey)
+            return
+        }
+        UserDefaults.standard.set(providerID, forKey: self.selectedProviderKey)
     }
 
     private static func sharedDefaults(bundleID: String?) -> UserDefaults? {
-        guard let groupID = self.groupID(for: bundleID) else { return nil }
-        return UserDefaults(suiteName: groupID)
+        for groupID in self.groupIDs(for: bundleID) {
+            if let defaults = UserDefaults(suiteName: groupID) {
+                return defaults
+            }
+        }
+        return nil
     }
 
     private static func snapshotURL(bundleID: String?) -> URL? {
+        self.snapshotURLs(bundleID: bundleID).first
+    }
+
+    private static func writableSnapshotURL(bundleID: String?) -> (URL, String)? {
         let fm = FileManager.default
-        if let groupID = self.groupID(for: bundleID),
-           let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID)
-        {
-            return container.appendingPathComponent(self.filename, isDirectory: false)
+        for groupID in self.groupIDs(for: bundleID) {
+            if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+                return (container.appendingPathComponent(self.filename, isDirectory: false), groupID)
+            }
+        }
+        return nil
+    }
+
+    private static func snapshotURLs(bundleID: String?) -> [URL] {
+        let fm = FileManager.default
+        var urls: [URL] = []
+        for groupID in self.groupIDs(for: bundleID) {
+            if let container = fm.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+                urls.append(container.appendingPathComponent(self.filename, isDirectory: false))
+            }
         }
 
+        let legacy = self.legacySnapshotURL()
+        urls.append(legacy)
+        return urls
+    }
+
+    private static func legacySnapshotURL() -> URL {
+        let fm = FileManager.default
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fm.temporaryDirectory
         let dir = base.appendingPathComponent("CodexBar", isDirectory: true)
@@ -232,12 +319,106 @@ public enum iOSWidgetSnapshotStore {
         return dir.appendingPathComponent(self.filename, isDirectory: false)
     }
 
-    private static func groupID(for bundleID: String?) -> String? {
-        guard let bundleID, !bundleID.isEmpty else { return self.appGroupID }
-        if bundleID.contains(".debug") {
-            return "group.com.steipete.codexbar.debug"
+    private static func groupIDs(for bundleID: String?) -> [String] {
+        var groups: [String] = [self.appGroupID]
+
+        if let bundleID, !bundleID.isEmpty {
+            groups.append(self.appGroupID + ".debug")
+            groups.append("group." + bundleID)
         }
-        return self.appGroupID
+
+        groups.append("group.com.steipete.codexbar.ios")
+        groups.append("group.com.steipete.codexbar.ios.debug")
+        var seen: Set<String> = []
+        return groups.filter { seen.insert($0).inserted }
+    }
+
+    private static func runtimeEntitledGroupIDs() -> [String] {
+        #if canImport(Security) && os(macOS)
+        guard let task = SecTaskCreateFromSelf(nil),
+              let entitlementValue = SecTaskCopyValueForEntitlement(
+                  task,
+                  "com.apple.security.application-groups" as CFString,
+                  nil)
+        else {
+            return []
+        }
+
+        if let groups = entitlementValue as? [String] {
+            return groups
+        }
+        if let group = entitlementValue as? String {
+            return [group]
+        }
+        return []
+        #else
+        return []
+        #endif
+    }
+}
+
+extension iOSWidgetSnapshot {
+    func sanitizedForPersistence() -> iOSWidgetSnapshot {
+        iOSWidgetSnapshot(
+            entries: self.entries.map { $0.sanitizedForPersistence() },
+            enabledProviderIDs: self.enabledProviderIDs,
+            generatedAt: self.generatedAt)
+    }
+}
+
+extension iOSWidgetSnapshot.ProviderEntry {
+    func sanitizedForPersistence() -> iOSWidgetSnapshot.ProviderEntry {
+        iOSWidgetSnapshot.ProviderEntry(
+            providerID: self.providerID,
+            updatedAt: self.updatedAt,
+            primary: self.primary?.sanitizedForPersistence(),
+            secondary: self.secondary?.sanitizedForPersistence(),
+            tertiary: self.tertiary?.sanitizedForPersistence(),
+            planType: self.planType,
+            creditsRemaining: self.creditsRemaining?.finiteOrNil,
+            codeReviewRemainingPercent: self.codeReviewRemainingPercent?.finiteOrNil,
+            tokenUsage: self.tokenUsage?.sanitizedForPersistence(),
+            dailyUsage: self.dailyUsage.map { $0.sanitizedForPersistence() })
+    }
+}
+
+extension iOSWidgetSnapshot.RateWindow {
+    func sanitizedForPersistence() -> iOSWidgetSnapshot.RateWindow {
+        let boundedUsedPercent = max(0, min(100, self.usedPercent.finiteOrZero))
+        return iOSWidgetSnapshot.RateWindow(
+            usedPercent: boundedUsedPercent,
+            windowMinutes: self.windowMinutes,
+            resetsAt: self.resetsAt,
+            resetDescription: self.resetDescription)
+    }
+}
+
+extension iOSWidgetSnapshot.TokenUsageSummary {
+    func sanitizedForPersistence() -> iOSWidgetSnapshot.TokenUsageSummary {
+        iOSWidgetSnapshot.TokenUsageSummary(
+            sessionCostUSD: self.sessionCostUSD?.finiteOrNil,
+            sessionTokens: self.sessionTokens,
+            last30DaysCostUSD: self.last30DaysCostUSD?.finiteOrNil,
+            last30DaysTokens: self.last30DaysTokens)
+    }
+}
+
+extension iOSWidgetSnapshot.DailyUsagePoint {
+    func sanitizedForPersistence() -> iOSWidgetSnapshot.DailyUsagePoint {
+        iOSWidgetSnapshot.DailyUsagePoint(
+            dayKey: self.dayKey,
+            totalTokens: self.totalTokens,
+            costUSD: self.costUSD?.finiteOrNil)
+    }
+}
+
+extension Double {
+    var finiteOrNil: Double? {
+        self.isFinite ? self : nil
+    }
+
+    var finiteOrZero: Double {
+        self.isFinite ? self : 0
     }
 }
 
@@ -309,6 +490,42 @@ public enum iOSProviderCatalog {
         return result
     }
 
+    public static func prioritizedRefreshProviderIDs(
+        configuredProviderIDs: [String],
+        selectedProviderID: String?,
+        coreProviderIDs: [String] = ["codex", "copilot", "claude", "gemini"],
+        cap: Int = 0) -> [String]
+    {
+        var dedupedConfigured: [String] = []
+        var configuredSet: Set<String> = []
+        for providerID in configuredProviderIDs where configuredSet.insert(providerID).inserted {
+            dedupedConfigured.append(providerID)
+        }
+
+        guard !dedupedConfigured.isEmpty else { return [] }
+        var result: [String] = []
+
+        if let selectedProviderID,
+           configuredSet.contains(selectedProviderID)
+        {
+            result.append(selectedProviderID)
+        }
+
+        for providerID in coreProviderIDs where configuredSet.contains(providerID) {
+            guard !result.contains(providerID) else { continue }
+            result.append(providerID)
+        }
+
+        for providerID in dedupedConfigured where !result.contains(providerID) {
+            result.append(providerID)
+        }
+
+        if cap > 0 {
+            return Array(result.prefix(cap))
+        }
+        return result
+    }
+
     private static func fallbackDisplayName(for providerID: String) -> String {
         providerID
             .replacingOccurrences(of: "_", with: " ")
@@ -356,7 +573,11 @@ public enum iOSProviderCatalog {
             iconSymbolName: "chevron.left.forwardslash.chevron.right",
             iconResourceName: "ProviderIcon-opencode",
             accentToken: .cyan),
-        "zai": .init(displayName: "z.ai", iconSymbolName: "globe", iconResourceName: "ProviderIcon-zai", accentToken: .violet),
+        "zai": .init(
+            displayName: "z.ai",
+            iconSymbolName: "globe",
+            iconResourceName: "ProviderIcon-zai",
+            accentToken: .violet),
         "factory": .init(
             displayName: "Droid",
             iconSymbolName: "shippingbox.fill",

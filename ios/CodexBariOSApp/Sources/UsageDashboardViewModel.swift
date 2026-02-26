@@ -66,11 +66,13 @@ final class UsageDashboardViewModel {
         self.hasCopilotToken = CopilotTokenStore.load() != nil
         self.hasCodexCredentials = CodexCredentialsStore.load() != nil
         self.refreshProviderTokenPresence()
+        if snapshot != nil {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 
     func loadSampleData() {
         let sample = iOSWidgetPreviewData.snapshot()
-        iOSWidgetSnapshotStore.save(sample)
         self.snapshot = sample
         self.selectedProviderID = sample.selectedProviderID(preferred: self.selectedProviderID)
         self.importErrorMessage = nil
@@ -79,6 +81,7 @@ final class UsageDashboardViewModel {
     func selectProvider(_ providerID: String) {
         self.selectedProviderID = providerID
         iOSWidgetSnapshotStore.saveSelectedProviderID(providerID)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     func importSnapshotFromJSON() {
@@ -94,6 +97,7 @@ final class UsageDashboardViewModel {
             self.importErrorMessage = nil
             self.showingImportSheet = false
             self.importJSON = ""
+            WidgetCenter.shared.reloadAllTimelines()
         } catch {
             self.importErrorMessage = "Invalid snapshot JSON: \(error.localizedDescription)"
         }
@@ -148,11 +152,11 @@ final class UsageDashboardViewModel {
     func refreshProvider(providerID: String) async {
         switch providerID {
         case "codex":
-            await self.refreshCodexUsage()
+            _ = await self.refreshCodexUsage()
         case "copilot":
-            await self.refreshCopilotUsage()
+            _ = await self.refreshCopilotUsage()
         default:
-            await self.refreshProviderUsage(providerID)
+            _ = await self.refreshProviderUsage(providerID)
         }
     }
 
@@ -180,31 +184,55 @@ final class UsageDashboardViewModel {
         self.providerStatusMessages[providerID] = "Credentials removed."
     }
 
-    func refreshProviderUsage(_ providerID: String) async {
-        guard Self.apiTokenProviderIDs.contains(providerID) else { return }
+    @discardableResult
+    func refreshProviderUsage(
+        _ providerID: String,
+        updateSelection: Bool = true,
+        silent: Bool = false) async -> Bool
+    {
+        guard Self.apiTokenProviderIDs.contains(providerID) else { return false }
         guard let token = ProviderAPITokenStore.load(providerID), !token.isEmpty else {
             self.providerHasToken[providerID] = false
-            self.providerStatusMessages[providerID] = "Save credentials first."
-            self.providerErrorMessages[providerID] = nil
-            return
+            if !silent {
+                self.providerStatusMessages[providerID] = "Save credentials first."
+                self.providerErrorMessages[providerID] = nil
+            }
+            return false
         }
 
         self.providerHasToken[providerID] = true
-        self.providerErrorMessages[providerID] = nil
-        self.providerStatusMessages[providerID] = "Refreshing \(iOSProviderCatalog.displayName(for: providerID)) usage…"
+        if !silent {
+            self.providerErrorMessages[providerID] = nil
+            self.providerStatusMessages[providerID] = "Refreshing \(iOSProviderCatalog.displayName(for: providerID)) usage…"
+        }
         self.providerRefreshingIDs.insert(providerID)
         defer { self.providerRefreshingIDs.remove(providerID) }
 
         do {
             let providerSnapshot = try await self.fetchProviderSnapshot(providerID, token: token)
-            self.mergeAndPersist(providerSnapshot: providerSnapshot, providerID: providerID)
-            self.selectedProviderID = providerID
-            iOSWidgetSnapshotStore.saveSelectedProviderID(providerID)
-            WidgetCenter.shared.reloadAllTimelines()
-            self.providerStatusMessages[providerID] = "Usage updated."
+            let didPersist = self.mergeAndPersist(providerSnapshot: providerSnapshot, providerID: providerID)
+            if updateSelection {
+                self.selectedProviderID = providerID
+                iOSWidgetSnapshotStore.saveSelectedProviderID(providerID)
+            }
+            if didPersist {
+                WidgetCenter.shared.reloadAllTimelines()
+                if !silent {
+                    self.providerStatusMessages[providerID] = "Usage updated."
+                }
+            } else {
+                if !silent {
+                    self.providerStatusMessages[providerID] = nil
+                    self.providerErrorMessages[providerID] = self.widgetPersistenceErrorMessage()
+                }
+            }
+            return didPersist
         } catch {
-            self.providerStatusMessages[providerID] = nil
-            self.providerErrorMessages[providerID] = "Refresh failed: \(error.localizedDescription)"
+            if !silent {
+                self.providerStatusMessages[providerID] = nil
+                self.providerErrorMessages[providerID] = "Refresh failed: \(error.localizedDescription)"
+            }
+            return false
         }
     }
 
@@ -253,6 +281,7 @@ final class UsageDashboardViewModel {
             self.hasCopilotToken = true
             self.copilotDeviceCode = nil
             self.authStatusMessage = "GitHub sign-in complete."
+            _ = await self.refreshCopilotUsage()
         } catch is CancellationError {
             self.authStatusMessage = "GitHub sign-in cancelled."
         } catch {
@@ -267,29 +296,48 @@ final class UsageDashboardViewModel {
         self.copilotDeviceCode = nil
     }
 
-    func refreshCopilotUsage() async {
+    @discardableResult
+    func refreshCopilotUsage(updateSelection: Bool = true, silent: Bool = false) async -> Bool {
         guard let token = CopilotTokenStore.load(), !token.isEmpty else {
-            self.liveRefreshStatusMessage = "Sign in with GitHub first."
+            if !silent {
+                self.liveRefreshStatusMessage = "Sign in with GitHub first."
+            }
             self.hasCopilotToken = false
-            return
+            return false
         }
 
-        self.authErrorMessage = nil
-        self.liveRefreshStatusMessage = "Refreshing live usage from GitHub…"
+        if !silent {
+            self.authErrorMessage = nil
+            self.liveRefreshStatusMessage = "Refreshing live usage from GitHub…"
+        }
         self.isRefreshingCopilotUsage = true
         defer { self.isRefreshingCopilotUsage = false }
 
         do {
             let response = try await iOSCopilotUsageFetcher(token: token).fetch()
             let copilotSnapshot = iOSCopilotUsageMapper.makeSnapshot(from: response)
-            self.mergeAndPersist(copilotSnapshot: copilotSnapshot)
-            self.selectedProviderID = "copilot"
-            iOSWidgetSnapshotStore.saveSelectedProviderID("copilot")
-            WidgetCenter.shared.reloadAllTimelines()
-            self.liveRefreshStatusMessage = "Live usage updated."
+            let didPersist = self.mergeAndPersist(copilotSnapshot: copilotSnapshot)
+            if updateSelection {
+                self.selectedProviderID = "copilot"
+                iOSWidgetSnapshotStore.saveSelectedProviderID("copilot")
+            }
+            if didPersist {
+                WidgetCenter.shared.reloadAllTimelines()
+                if !silent {
+                    self.liveRefreshStatusMessage = "Live usage updated."
+                }
+            } else {
+                if !silent {
+                    self.liveRefreshStatusMessage = self.widgetPersistenceErrorMessage()
+                }
+            }
             self.hasCopilotToken = true
+            return didPersist
         } catch {
-            self.liveRefreshStatusMessage = "Live refresh failed: \(error.localizedDescription)"
+            if !silent {
+                self.liveRefreshStatusMessage = "Live refresh failed: \(error.localizedDescription)"
+            }
+            return false
         }
     }
 
@@ -338,6 +386,7 @@ final class UsageDashboardViewModel {
             self.hasCodexCredentials = true
             self.codexDeviceCode = nil
             self.codexAuthStatusMessage = "Codex sign-in complete."
+            _ = await self.refreshCodexUsage()
         } catch is CancellationError {
             self.codexAuthStatusMessage = "Codex sign-in cancelled."
         } catch {
@@ -352,15 +401,20 @@ final class UsageDashboardViewModel {
         self.codexDeviceCode = nil
     }
 
-    func refreshCodexUsage() async {
+    @discardableResult
+    func refreshCodexUsage(updateSelection: Bool = true, silent: Bool = false) async -> Bool {
         guard var credentials = CodexCredentialsStore.load() else {
-            self.codexRefreshStatusMessage = "Sign in to Codex first."
+            if !silent {
+                self.codexRefreshStatusMessage = "Sign in to Codex first."
+            }
             self.hasCodexCredentials = false
-            return
+            return false
         }
 
-        self.codexAuthErrorMessage = nil
-        self.codexRefreshStatusMessage = "Refreshing live Codex usage…"
+        if !silent {
+            self.codexAuthErrorMessage = nil
+            self.codexRefreshStatusMessage = "Refreshing live Codex usage…"
+        }
         self.isRefreshingCodexUsage = true
         defer { self.isRefreshingCodexUsage = false }
 
@@ -371,35 +425,59 @@ final class UsageDashboardViewModel {
             }
 
             let response = try await iOSCodexUsageFetcher.fetchUsage(credentials: credentials)
-            self.applyCodexUsageRefreshResult(response: response, credentials: credentials)
+            return self.applyCodexUsageRefreshResult(
+                response: response,
+                credentials: credentials,
+                updateSelection: updateSelection,
+                silent: silent)
         } catch iOSCodexOAuthFetchError.unauthorized {
             do {
                 credentials = try await iOSCodexTokenRefresher.refresh(credentials)
                 CodexCredentialsStore.save(credentials)
                 let response = try await iOSCodexUsageFetcher.fetchUsage(credentials: credentials)
-                self.applyCodexUsageRefreshResult(response: response, credentials: credentials)
+                return self.applyCodexUsageRefreshResult(
+                    response: response,
+                    credentials: credentials,
+                    updateSelection: updateSelection,
+                    silent: silent)
             } catch {
-                self.handleCodexRefreshError(error)
+                self.handleCodexRefreshError(error, silent: silent)
+                return false
             }
         } catch {
-            self.handleCodexRefreshError(error)
+            self.handleCodexRefreshError(error, silent: silent)
+            return false
         }
     }
 
+    @discardableResult
     private func applyCodexUsageRefreshResult(
         response: iOSCodexUsageResponse,
-        credentials: iOSCodexOAuthCredentials)
+        credentials: iOSCodexOAuthCredentials,
+        updateSelection: Bool = true,
+        silent: Bool = false) -> Bool
     {
         let codexSnapshot = iOSCodexUsageMapper.makeSnapshot(from: response, credentials: credentials)
-        self.mergeAndPersist(providerSnapshot: codexSnapshot, providerID: "codex")
-        self.selectedProviderID = "codex"
-        iOSWidgetSnapshotStore.saveSelectedProviderID("codex")
-        WidgetCenter.shared.reloadAllTimelines()
-        self.codexRefreshStatusMessage = "Codex usage updated."
+        let didPersist = self.mergeAndPersist(providerSnapshot: codexSnapshot, providerID: "codex")
+        if updateSelection {
+            self.selectedProviderID = "codex"
+            iOSWidgetSnapshotStore.saveSelectedProviderID("codex")
+        }
+        if didPersist {
+            WidgetCenter.shared.reloadAllTimelines()
+            if !silent {
+                self.codexRefreshStatusMessage = "Codex usage updated."
+            }
+        } else {
+            if !silent {
+                self.codexRefreshStatusMessage = self.widgetPersistenceErrorMessage()
+            }
+        }
         self.hasCodexCredentials = true
+        return didPersist
     }
 
-    private func handleCodexRefreshError(_ error: Error) {
+    private func handleCodexRefreshError(_ error: Error, silent: Bool = false) {
         if let refreshError = error as? iOSCodexTokenRefresher.RefreshError {
             switch refreshError {
             case .expired, .revoked, .reused:
@@ -420,7 +498,9 @@ final class UsageDashboardViewModel {
             }
         }
 
-        self.codexRefreshStatusMessage = "Codex refresh failed: \(error.localizedDescription)"
+        if !silent {
+            self.codexRefreshStatusMessage = "Codex refresh failed: \(error.localizedDescription)"
+        }
     }
 
     private func fetchProviderSnapshot(_ providerID: String, token: String) async throws -> iOSWidgetSnapshot {
@@ -485,14 +565,68 @@ final class UsageDashboardViewModel {
         throw InvalidCredentialFormatError(providerID: "vertexai", expectedFormat: "project_id||access_token")
     }
 
+    @discardableResult
+    func performBackgroundRefresh(maxProviders: Int = 3) async -> Int {
+        self.refreshProviderTokenPresence()
+        self.hasCopilotToken = CopilotTokenStore.load() != nil
+        self.hasCodexCredentials = CodexCredentialsStore.load() != nil
+
+        var connectedProviderIDs: [String] = []
+        if self.hasCodexCredentials {
+            connectedProviderIDs.append("codex")
+        }
+        if self.hasCopilotToken {
+            connectedProviderIDs.append("copilot")
+        }
+        for providerID in Self.apiTokenProviderIDs where self.providerHasToken[providerID] == true {
+            connectedProviderIDs.append(providerID)
+        }
+
+        let selectedProviderID = iOSWidgetSnapshotStore.loadSelectedProviderID()
+        let refreshOrder = iOSProviderCatalog.prioritizedRefreshProviderIDs(
+            configuredProviderIDs: connectedProviderIDs,
+            selectedProviderID: selectedProviderID,
+            cap: maxProviders)
+
+        guard !refreshOrder.isEmpty else { return 0 }
+
+        var refreshedCount = 0
+        for providerID in refreshOrder {
+            let didPersist: Bool
+            switch providerID {
+            case "codex":
+                didPersist = await self.refreshCodexUsage(updateSelection: false, silent: true)
+            case "copilot":
+                didPersist = await self.refreshCopilotUsage(updateSelection: false, silent: true)
+            default:
+                didPersist = await self.refreshProviderUsage(providerID, updateSelection: false, silent: true)
+            }
+            if didPersist {
+                refreshedCount += 1
+            }
+        }
+        return refreshedCount
+    }
+
     private func refreshProviderTokenPresence() {
         for providerID in Self.apiTokenProviderIDs {
             self.providerHasToken[providerID] = ProviderAPITokenStore.load(providerID) != nil
         }
     }
 
-    private func mergeAndPersist(providerSnapshot: iOSWidgetSnapshot, providerID: String) {
-        guard let providerEntry = providerSnapshot.entries.first else { return }
+    private func widgetPersistenceErrorMessage() -> String {
+        let status = iOSWidgetSnapshotStore.sharedContainerStatus()
+        guard status.writableGroupID == nil else {
+            return "Usage loaded, but widget snapshot could not be persisted."
+        }
+
+        let joinedCandidates = status.candidateGroupIDs.joined(separator: ", ")
+        return "Usage loaded in app-local storage, but shared widget storage is unavailable on this build. Missing App Group container (checked: \(joinedCandidates))."
+    }
+
+    @discardableResult
+    private func mergeAndPersist(providerSnapshot: iOSWidgetSnapshot, providerID: String) -> Bool {
+        guard let providerEntry = providerSnapshot.entries.first else { return false }
         let base = self.snapshot
 
         var entries = base?.entries.filter { $0.providerID != providerID } ?? []
@@ -505,11 +639,13 @@ final class UsageDashboardViewModel {
             enabledProviderIDs: Array(enabled).sorted(),
             generatedAt: Date())
 
-        iOSWidgetSnapshotStore.save(merged)
+        let didPersist = iOSWidgetSnapshotStore.save(merged)
         self.snapshot = merged
+        return didPersist
     }
 
-    private func mergeAndPersist(copilotSnapshot: iOSWidgetSnapshot) {
+    @discardableResult
+    private func mergeAndPersist(copilotSnapshot: iOSWidgetSnapshot) -> Bool {
         self.mergeAndPersist(providerSnapshot: copilotSnapshot, providerID: "copilot")
     }
 }
