@@ -48,6 +48,8 @@ struct ProviderErrorView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.leading, 2)
+        .liquidGlassCard(
+            cornerRadius: 14,
+            contentPadding: EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
     }
 }

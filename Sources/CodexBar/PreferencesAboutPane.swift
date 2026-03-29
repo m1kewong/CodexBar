@@ -62,6 +62,9 @@ struct AboutPane: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            .liquidGlassCard(
+                cornerRadius: 14,
+                contentPadding: EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
 
             VStack(alignment: .center, spacing: 10) {
                 AboutLinkRow(
@@ -75,8 +78,9 @@ struct AboutPane: View {
             .padding(.top, 8)
             .frame(maxWidth: .infinity)
             .multilineTextAlignment(.center)
-
-            Divider()
+            .liquidGlassCard(
+                cornerRadius: 14,
+                contentPadding: EdgeInsets(top: 10, leading: 16, bottom: 12, trailing: 16))
 
             if self.updater.isAvailable {
                 VStack(spacing: 10) {
@@ -104,9 +108,15 @@ struct AboutPane: View {
                     }
                     Button("Check for Updates…") { self.updater.checkForUpdates(nil) }
                 }
+                .liquidGlassCard(
+                    cornerRadius: 14,
+                    contentPadding: EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
             } else {
                 Text(self.updater.unavailableReason ?? "Updates unavailable in this build.")
                     .foregroundStyle(.secondary)
+                    .liquidGlassCard(
+                        cornerRadius: 14,
+                        contentPadding: EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
             }
 
             Text("© 2025 Peter Steinberger. MIT License.")

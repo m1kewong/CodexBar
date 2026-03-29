@@ -61,6 +61,9 @@ struct SettingsSection<Content: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .liquidGlassCard(
+            cornerRadius: 14,
+            contentPadding: EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
     }
 }
 
@@ -81,7 +84,12 @@ struct AboutLinkRow: View {
                     .underline(self.hovering, color: .accentColor)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(self.hovering ? Color.accentColor.opacity(0.14) : .clear)
+            }
             .foregroundColor(.accentColor)
         }
         .buttonStyle(.plain)

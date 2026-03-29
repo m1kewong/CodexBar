@@ -54,8 +54,6 @@ struct DisplayPane: View {
                     .opacity(self.settings.menuBarShowsBrandIconWithPercent ? 1 : 0.5)
                 }
 
-                Divider()
-
                 SettingsSection(contentSpacing: 12) {
                     Text("Menu content")
                         .font(.caption)

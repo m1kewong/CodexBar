@@ -14,7 +14,7 @@
 
 ## Coding Style & Naming
 - Enforce SwiftFormat/SwiftLint: run `swiftformat Sources Tests` and `swiftlint --strict`. 4-space indent, 120-char lines, explicit `self` is intentional—do not remove.
-- Favor small, typed structs/enums; maintain existing `MARK` organization. Use descriptive symbols; match current commit tone.
+- Favor small, typed structs/enums; maintain existing `MARK` organization. Use descriptive symbols; match existing code tone.
 
 ## Testing Guidelines
 - Add/extend XCTest cases under `Tests/CodexBarTests/*Tests.swift` (`FeatureNameTests` with `test_caseDescription` methods).
@@ -22,7 +22,7 @@
 - After any code change, run `pnpm check` and fix all reported format/lint issues before handoff.
 
 ## Commit & PR Guidelines
-- Commit messages: short imperative clauses (e.g., “Improve usage probe”, “Fix icon dimming”); keep commits scoped.
+- Commit messages: follow Conventional Commits 1.0.0 (`<type>[optional scope]: <description>`), e.g., `fix(icon): correct dimming on inactive state`; keep commits scoped.
 - PRs/patches should list summary, commands run, screenshots/GIFs for UI changes, and linked issue/reference when relevant.
 
 ## Agent Notes

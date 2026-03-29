@@ -33,13 +33,7 @@ struct ProviderSidebarListView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(
-            RoundedRectangle(cornerRadius: ProviderSettingsMetrics.sidebarCornerRadius, style: .continuous)
-                .fill(.regularMaterial))
-        .overlay(
-            RoundedRectangle(cornerRadius: ProviderSettingsMetrics.sidebarCornerRadius, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: ProviderSettingsMetrics.sidebarCornerRadius, style: .continuous))
+        .liquidGlassPanel(cornerRadius: ProviderSettingsMetrics.sidebarCornerRadius)
         .frame(minWidth: ProviderSettingsMetrics.sidebarWidth, maxWidth: ProviderSettingsMetrics.sidebarWidth)
     }
 }

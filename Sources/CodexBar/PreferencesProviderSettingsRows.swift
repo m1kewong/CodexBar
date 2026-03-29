@@ -30,6 +30,9 @@ struct ProviderSettingsSection<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, self.verticalPadding)
         .padding(.horizontal, self.horizontalPadding)
+        .liquidGlassCard(
+            cornerRadius: 14,
+            contentPadding: EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
     }
 }
 
